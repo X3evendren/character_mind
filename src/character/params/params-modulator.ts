@@ -27,6 +27,7 @@ export class ParamsModulator {
 
   modulateFast(psych: any): Record<string, number> {
     const shifts: Record<string, number> = {};
+    if (!psych) return shifts; // Guard: psychology engine failure → no shifts
     const emo = psych.emotion;
     const att = psych.attachment;
     const df = psych.defense;
@@ -90,6 +91,7 @@ export class ParamsModulator {
 
   modulateSlow(psych: any, memoryCtx = "", fastShifts?: Record<string,number>|null, selfNarrative = ""): Record<string,number> {
     const shifts: Record<string,number> = {};
+    if (!psych) return shifts; // Guard: null psychology → no slow shifts
     if (fastShifts) {
       const emo = psych.emotion;
       if ((fastShifts["anger"]??0) > 0.5 && emo.dominant === "sadness") {

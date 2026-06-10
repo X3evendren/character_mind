@@ -1,0 +1,11 @@
+=== Cold-Hot Separation E2E Test ===
+Turn 1: "今天天气真好，心情不错" → coldCache before=NULL, elapsed=1.3s
+Turn 1 response: ...
+Cold result: L0=""
+Cold result: L2 emotion=0(50%)
+Cold result: L3 narrative="作为林雨，我准备好帮助用户。"
+
+Turn 2: "你知道吗，其实我最近遇到了一个难题" → coldCache before=POPULATED, elapsed=1.4s
+Turn 2 response: ...
+
+✅ PIPELINE VERIFIED: Cold analysis → cache → next turn Hot Path

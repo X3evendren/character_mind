@@ -37,6 +37,11 @@ export abstract class MemoryStore {
   abstract get length(): number;
 }
 
+/** Safe JSON parse: returns fallback on any failure. */
+export function safeJsonParse<T>(raw: string, fallback: T): T {
+  try { return JSON.parse(raw); } catch { return fallback; }
+}
+
 export function createMemoryRecord(opts: Partial<MemoryRecord> = {}): MemoryRecord {
   return {
     recordId: opts.recordId ?? "",

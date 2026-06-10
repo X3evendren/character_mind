@@ -170,34 +170,21 @@ export class FourLayerColdAnalyzer {
   private async analyzeLayer0(
     params: ColdAnalyzeParams,
   ): Promise<{ text: string; vector: AffectiveVector }> {
-    const prompt = `你是"情感底色"分析器。你不分析具体事件，只感知互动留下的被动情感沉积。
+    const prompt = `你是情感底色感知器。基于以下信息，输出1句话中文+4个数值。
 
-【当前底色】
-亲近感(warmth): ${params.previousResidueVector.warmth.toFixed(2)} (-1..1)
-关系分量(weight): ${params.previousResidueVector.weight.toFixed(2)} (0..1)
-清晰度(clarity): ${params.previousResidueVector.clarity.toFixed(2)} (0..1)
-未解张力(tension): ${params.previousResidueVector.tension.toFixed(2)} (0..1)
+当前底色: warmth=${params.previousResidueVector.warmth.toFixed(2)} weight=${params.previousResidueVector.weight.toFixed(2)} clarity=${params.previousResidueVector.clarity.toFixed(2)} tension=${params.previousResidueVector.tension.toFixed(2)}
+用户说: ${params.input.slice(0, 200)}
+你回复: ${params.response.slice(0, 300)}
 
-【用户输入】
-${params.input.slice(0, 300)}
-
-【你的回复】
-${params.response.slice(0, 500)}
-
-请以${params.assistantConfig?.name ?? "角色"}的视角，用1句话中文描述：这次互动之后，你心中留下了一种什么样的底色？
-用第一人称"你"开头，不要用数值，不要分析，就像一个人在心里感觉到的模糊气质。
-
-然后输出更新后的四个数值:
-<output>
-<text>你感到一种熟悉的亲近，但因为有些话没说开，心里还悬着一点东西。</text>
+请严格按以下格式输出(只输出下面4行,不要其他内容):
+<text>这里写1句话中文，描述这次互动后心中的底色，用第一人称"你"开头</text>
 <warmth>0.60</warmth>
 <weight>0.45</weight>
 <clarity>0.30</clarity>
-<tension>0.35</tension>
-</output>`;
+<tension>0.35</tension>`;
 
     const resp = await this.psychProvider.chat(
-      [{ role: "user", content: prompt }], 0.3, 400, undefined, "",
+      [{ role: "user", content: prompt }], 0.3, 1500, undefined, "",
     );
     const raw = resp.content ?? "";
 
@@ -246,7 +233,7 @@ ${params.input.slice(0, 200)}
 </output>`;
 
     const resp = await this.psychProvider.chat(
-      [{ role: "user", content: prompt }], 0.3, 200, undefined, "",
+      [{ role: "user", content: prompt }], 0.3, 600, undefined, "",
     );
     const raw = (resp.content ?? "").trim();
     if (!raw || raw === "" || raw.includes("消散") || raw.includes("没有")) return "";
@@ -314,7 +301,7 @@ ${params.input.slice(0, 200)}
 </output>`;
 
     const resp = await this.slowProvider.chat(
-      [{ role: "user", content: prompt }], 0.4, 250, undefined, "",
+      [{ role: "user", content: prompt }], 0.4, 800, undefined, "",
     );
     const raw = (resp.content ?? "").trim();
     if (!raw || raw === "" || raw.includes("无变化")) return params.selfNarrative;

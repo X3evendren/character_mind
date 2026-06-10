@@ -70,7 +70,9 @@ export class WorkingMemory extends MemoryStore {
     const candidates: Array<[number, string]> = [];
     for (const [rid, r] of this._records) {
       if (!this._locked.has(rid)) {
-        const score = r.significance + Math.max(...Object.values(r.emotionalSignature), 0);
+        const emoVals = Object.values(r.emotionalSignature);
+        const maxEmo = emoVals.length > 0 ? Math.max(...emoVals) : 0;
+        const score = r.significance + maxEmo;
         candidates.push([score, rid]);
       }
     }
@@ -87,7 +89,9 @@ export class WorkingMemory extends MemoryStore {
   promoteCandidates(): MemoryRecord[] {
     const result: MemoryRecord[] = [];
     for (const r of this._records.values()) {
-      if (r.significance > 0.3 || Math.max(...Object.values(r.emotionalSignature), 0) > 0.4) result.push(r);
+      const emoVals = Object.values(r.emotionalSignature);
+      const maxEmo = emoVals.length > 0 ? Math.max(...emoVals) : 0;
+      if (r.significance > 0.3 || maxEmo > 0.4) result.push(r);
     }
     return result;
   }

@@ -21,13 +21,15 @@ export interface LLMResponse {
 export class OpenAICompatProvider {
   public model: string;
   public client: OpenAI;
+  public maxRetries: number;
 
-  constructor(model: string, apiKey: string, baseUrl: string) {
+  constructor(model: string, apiKey: string, baseUrl: string, maxRetries = 2) {
     this.model = model;
+    this.maxRetries = maxRetries;
     this.client = new OpenAI({
       apiKey: apiKey || "not-needed",
       baseURL: baseUrl,
-      maxRetries: 0,
+      maxRetries,
     });
   }
 
@@ -44,15 +46,22 @@ export class OpenAICompatProvider {
       messages: messages as any,
       temperature,
       max_tokens: maxTokens,
+      tools: _tools,
     }, { signal });
     const choice = resp.choices?.[0];
     if (!choice) return { content: "", reasoningContent: "", usage: {}, finishReason: "stop", toolCalls: [] };
     const toolCalls: ToolCall[] = (choice.message?.tool_calls ?? []).map((tc: any) => ({
-      id: tc.id, name: tc.function.name, arguments: JSON.parse(tc.function.arguments),
+      id: tc.id, name: tc.function.name, arguments: tryParseJson(tc.function.arguments),
     }));
+    // Extract usable content: thinking models (lfm, deepseek-r1, Ollama) may put output in
+    // reasoning_content or reasoning, while content is empty.
+    const rawMsg = choice.message as any;
+    const thinkingOutput = rawMsg?.reasoning_content || rawMsg?.reasoning || "";
+    const content = choice.message?.content || thinkingOutput || "";
+
     return {
-      content: choice.message?.content ?? "",
-      reasoningContent: (choice.message as any)?.reasoning_content ?? "",
+      content,
+      reasoningContent: thinkingOutput,
       usage: resp.usage ? { promptTokens: resp.usage.prompt_tokens, completionTokens: resp.usage.completion_tokens, totalTokens: resp.usage.total_tokens } : {},
       finishReason: choice.finish_reason ?? "stop",
       toolCalls,
@@ -91,9 +100,12 @@ export class OpenAICompatProvider {
           content += delta.content;
           if (onDelta) await onDelta(delta.content);
         }
-        const rc = (delta as any)?.reasoning_content;
-        if (rc) reasoningContent += rc;
-        if (chunk.choices[0].finish_reason) finishReason = chunk.choices[0].finish_reason;
+	        // Capture thinking output (OpenAI: reasoning_content, Ollama: reasoning)
+	        const rc = (delta as any)?.reasoning_content || (delta as any)?.reasoning || "";
+	        if (rc) reasoningContent += rc;
+	        // Also feed thinking tokens to content when delta.content is empty (Ollama models)
+	        if (!delta?.content && rc && onDelta) await onDelta(rc);
+	        if (chunk.choices[0].finish_reason) finishReason = chunk.choices[0].finish_reason;
         // Accumulate tool calls from stream deltas
         for (const tc of delta?.tool_calls ?? []) {
           const idx = tc.index as number;

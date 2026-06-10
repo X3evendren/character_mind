@@ -80,5 +80,15 @@ export class UnifiedParams {
   checkCoherence(): string[] { const v:string[]=[]; if(this.threatPrecision.effective>0.7&&this.safetyPrecision.effective>0.7)v.push("威胁精度和安全精度同时>0.7"); if(this.playfulness.effective>0.6&&this.sadness.effective>0.6)v.push("玩心和悲伤同时>0.6"); if(this.defenseIntensity.effective>0.6&&this.selfUpdateOpenness.effective>0.5)v.push("高防御+高自我更新开放"); if(this.fear.effective>0.8&&this.anger.effective>0.8)v.push("恐惧和愤怒同时>0.8"); return v; }
   autoCorrect() { const vs=this.checkCoherence(); if(!vs.length)return; for(const vv of vs){if(vv.includes("威胁")){if(this.threatPrecision.effective>this.safetyPrecision.effective)this.safetyPrecision.activation*=0.3;else this.threatPrecision.activation*=0.3}if(vv.includes("玩心")){this.playfulness.activation*=0.3;this.sadness.activation*=0.3}if(vv.includes("高防御"))this.selfUpdateOpenness.activation*=0.3;if(vv.includes("恐惧")){this.fear.activation*=0.5;this.anger.activation*=0.5}} }
   snapshot(): Record<string,number> { const s:Record<string,number>={}; for(const[n,p]of Object.entries(this.allParams()))s[n]=+p.effective.toFixed(3); return s; }
-  applySnapshot(snap: Record<string,number>) { for(const[n,v]of Object.entries(snap))this.get(n)?.setActivation(v); }
+  applySnapshot(snap: Record<string,number>) {
+    for (const [n, effective] of Object.entries(snap)) {
+      const p = this.get(n);
+      if (!p) continue;
+      // Reverse the effective formula: effective = baseline + activation * (1 - baseline)
+      // → activation = (effective - baseline) / (1 - baseline)
+      const denom = 1 - p.baseline;
+      if (Math.abs(denom) < 0.001) { p.setActivation(effective); continue; }
+      p.setActivation((effective - p.baseline) / denom);
+    }
+  }
 }

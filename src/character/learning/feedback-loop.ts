@@ -57,7 +57,9 @@ export class FeedbackLoop {
   getActiveRules(ctx: string): FeedbackRule[] {
     const cl = ctx.toLowerCase(); const rel: FeedbackRule[] = [];
     for (const r of this._rules.values()) {
-      if (r.pattern.split(/\s+/).some(w => cl.includes(w))) {
+      // Skip rules with empty patterns — they match everything
+      if (!r.pattern.trim()) continue;
+      if (r.pattern.split(/\s+/).some(w => w.length > 0 && cl.includes(w))) {
         if (r.lastApplied > 0) {
           const ds = (Date.now() / 1000 - r.lastApplied) / 86400;
           r.stability *= Math.max(0.1, 1 - ds * 0.1);

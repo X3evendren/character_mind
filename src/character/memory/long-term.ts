@@ -1,6 +1,6 @@
 /** Long-Term Memory — SQLite + time decay. better-sqlite3 for Node.js */
 import Database from "better-sqlite3";
-import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport } from "./store";
+import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse } from "./store";
 
 export class LongTermMemory extends MemoryStore {
   private dbPath: string; private maxItems: number; private halfLifeDays: number;
@@ -60,6 +60,13 @@ export class LongTermMemory extends MemoryStore {
   }
 
   async search(_e?: number[] | null, filters?: Record<string, unknown> | null, n = 5): Promise<MemoryRecord[]> {
+    // Support superseded filter (for ArchiveMemory.absorbSuperseded)
+    if (filters?.superseded) {
+      const rows = this._db!.prepare(
+        "SELECT * FROM ltm WHERE superseded=1 ORDER BY timestamp DESC LIMIT ?"
+      ).all(n) as any[];
+      return rows.map((r: any) => this._rowToRecord(r));
+    }
     return filters?.query ? this.recall(filters.query as string, n) : this.recall("", n);
   }
 
@@ -68,8 +75,8 @@ export class LongTermMemory extends MemoryStore {
     const rows = this._db!.prepare("SELECT record_id, content FROM ltm WHERE superseded=0 ORDER BY timestamp DESC LIMIT 50").all() as any[];
     const seen = new Set<string>();
     for (const row of rows) {
-      const rid: string = row[0] ?? row.record_id;
-      const content: string = row[1] ?? row.content;
+      const rid: string = row.record_id;
+      const content: string = row.content;
       if (seen.has(content)) {
         this._db!.prepare("UPDATE ltm SET superseded=1 WHERE record_id=?").run(rid);
         report.merged++;
@@ -88,9 +95,9 @@ export class LongTermMemory extends MemoryStore {
     const conflicts: Array<Record<string, string>> = [];
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
-        const e1 = JSON.parse(rows[i][2] || "{}"), e2 = JSON.parse(rows[j][2] || "{}");
+        const e1 = safeJsonParse(rows[i].emotion, {}) as Record<string,number>, e2 = safeJsonParse(rows[j].emotion, {}) as Record<string,number>;
         if ((e1.joy > 0.5 && e2.sadness > 0.5) || (e1.trust > 0.5 && e2.fear > 0.5))
-          conflicts.push({ recordA: rows[i][0], recordB: rows[j][0], type: "emotional_contradiction" });
+          conflicts.push({ recordA: rows[i].record_id, recordB: rows[j].record_id, type: "emotional_contradiction" });
       }
     }
     return conflicts;
@@ -193,16 +200,16 @@ export class LongTermMemory extends MemoryStore {
 
   private _rowToRecord(row: any): MemoryRecord {
     return createMemoryRecord({
-      recordId: row[0], content: row[1],
-      emotionalSignature: JSON.parse(row[2] || "{}"),
-      significance: row[3], eventType: row[4],
-      tags: JSON.parse(row[5] || "[]"), timestamp: row[6],
-      recallCount: row[7],
-      memoryType: (row[9] as any) ?? "episodic",
-      confidence: row[10] ?? 0.7,
-      superseded: !!row[11],
-      supersededBy: row[12] ?? null,
-      metadata: { relatedIds: JSON.parse(row[8] || "[]"), embedding: row[13] },
+      recordId: row.record_id, content: row.content,
+      emotionalSignature: safeJsonParse(row.emotion, {}),
+      significance: row.significance, eventType: row.event_type,
+      tags: safeJsonParse(row.tags, []), timestamp: row.timestamp,
+      recallCount: row.recall_count,
+      memoryType: (row.memory_type as any) ?? "episodic",
+      confidence: row.confidence ?? 0.7,
+      superseded: !!row.superseded,
+      supersededBy: row.superseded_by ?? null,
+      metadata: { relatedIds: safeJsonParse(row.related_ids, []), embedding: row.embedding },
     });
   }
 }

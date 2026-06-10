@@ -5,7 +5,7 @@
 
  */
 import Database from "better-sqlite3";
-import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport } from "./store";
+import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse } from "./store";
 
 export class ArchiveMemory extends MemoryStore {
   private dbPath: string;
@@ -124,12 +124,12 @@ export class ArchiveMemory extends MemoryStore {
 
   private _rowToRecord(row: any): MemoryRecord {
     return createMemoryRecord({
-      recordId: row[0], content: row[1],
-      emotionalSignature: JSON.parse(row[2] || "{}"),
-      significance: row[3], eventType: row[4],
-      tags: JSON.parse(row[5] || "[]"), timestamp: row[6],
-      recallCount: row[8],
-      metadata: { archivedAt: row[7], ttl: row[9], originalLayer: row[10] },
+      recordId: row.record_id, content: row.content,
+      emotionalSignature: safeJsonParse(row.emotion, {}),
+      significance: row.significance, eventType: row.event_type,
+      tags: safeJsonParse(row.tags, []), timestamp: row.timestamp,
+      recallCount: row.recall_count,
+      metadata: { archivedAt: row.archived_at, ttl: row.ttl, originalLayer: row.original_layer },
     });
   }
 }

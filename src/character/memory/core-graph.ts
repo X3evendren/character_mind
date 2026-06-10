@@ -49,18 +49,18 @@ export class CoreGraphMemory extends MemoryStore {
     const ck = `${entity}_d${depth}`; if (this._indexCache.has(ck)) return this._indexCache.get(ck)!;
     const nodeRows = this._db!.prepare("SELECT node_id, label, node_type FROM nodes WHERE label LIKE ? AND superseded=0").all(`%${entity}%`) as any[];
     if (!nodeRows.length) return { nodes: [], edges: [], summary: `未找到'${entity}'的相关信息` };
-    const nodeIds = nodeRows.map((r: any) => r[0]); const visited = new Set(nodeIds); const relevantEdges: any[] = [];
+    const nodeIds = nodeRows.map((r: any) => r.node_id); const visited = new Set(nodeIds); const relevantEdges: any[] = [];
     let frontier = [...nodeIds];
     for (let d = 0; d < depth && frontier.length; d++) {
       const ph = frontier.map(() => "?").join(",");
       const edgeRows = this._db!.prepare(`SELECT * FROM edges WHERE (from_id IN (${ph}) OR to_id IN (${ph})) AND superseded=0`).all(...frontier, ...frontier) as any[];
       const nf: string[] = [];
-      for (const er of edgeRows) { relevantEdges.push(er); if (!visited.has(er[1])) { visited.add(er[1]); nf.push(er[1]); } if (!visited.has(er[2])) { visited.add(er[2]); nf.push(er[2]); } }
+      for (const er of edgeRows) { relevantEdges.push(er); if (!visited.has(er.from_id)) { visited.add(er.from_id); nf.push(er.from_id); } if (!visited.has(er.to_id)) { visited.add(er.to_id); nf.push(er.to_id); } }
       frontier = nf;
     }
     const now = Date.now() / 1000;
-    const decayedEdges = relevantEdges.map(er => ({ from: er[1], to: er[2], relation: er[3], weight: Math.max(0.1, er[4] * Math.exp(-(now - er[5]) / (this.halfLifeDays * 86400))), source: er[6] }));
-    const nodeData = [...visited].map(nid => { const nr = this._db!.prepare("SELECT node_id, label, node_type FROM nodes WHERE node_id=?").get(nid) as any; return nr ? { id: nr[0], label: nr[1], type: nr[2] } : null; }).filter(Boolean) as any[];
+    const decayedEdges = relevantEdges.map(er => ({ from: er.from_id, to: er.to_id, relation: er.relation, weight: Math.max(0.1, er.weight * Math.exp(-(now - er.timestamp) / (this.halfLifeDays * 86400))), source: er.source_event }));
+    const nodeData = [...visited].map(nid => { const nr = this._db!.prepare("SELECT node_id, label, node_type FROM nodes WHERE node_id=?").get(nid) as any; return nr ? { id: nr.node_id, label: nr.label, type: nr.node_type } : null; }).filter(Boolean) as any[];
     const summary = decayedEdges.slice(0, 10).map(e => `${nodeData.find(n => n.id === e.from)?.label ?? e.from}与${nodeData.find(n => n.id === e.to)?.label ?? e.to}: ${e.relation}`).join("; ") || "无显著关系";
     const result = { nodes: nodeData, edges: decayedEdges, summary };
     this._indexCache.set(ck, result); if (this._indexCache.size > 100) { for (const k of [...this._indexCache.keys()].slice(0, 20)) this._indexCache.delete(k); }
@@ -83,7 +83,7 @@ export class CoreGraphMemory extends MemoryStore {
 
   private _addEdge(fid: string, tid: string, rel: string, now: number, src: string): void {
     const ex = this._db!.prepare("SELECT edge_id, weight FROM edges WHERE from_id=? AND to_id=? AND relation=? AND superseded=0").get(fid, tid, rel) as any;
-    if (ex) this._db!.prepare("UPDATE edges SET weight=MIN(1.0,?), timestamp=? WHERE edge_id=?").run(ex[1] + 0.2, now, ex[0]);
+    if (ex) this._db!.prepare("UPDATE edges SET weight=MIN(1.0,?), timestamp=? WHERE edge_id=?").run(ex.weight + 0.2, now, ex.edge_id);
     else this._db!.prepare("INSERT INTO edges (from_id,to_id,relation,weight,timestamp,source_event) VALUES (?,?,?,?,?,?)").run(fid, tid, rel, 0.5, now, src);
   }
 

@@ -69,8 +69,13 @@ export class SpanState {
       }
       case "invalidate": {
         // Only clear fluid spans from the invalidated span onward
-        this.spans = this.spans.filter(s => s.layer !== "fluid"
-          || this.spans.indexOf(s) < this.spans.findIndex(x => x.id === op.fromSpanId));
+        const cutoffIdx = this.spans.findIndex(x => x.id === op.fromSpanId);
+        // Guard: if fromSpanId not found, keep all non-fluid spans (don't wipe everything)
+        if (cutoffIdx < 0) {
+          this.spans = this.spans.filter(s => s.layer !== "fluid");
+        } else {
+          this.spans = this.spans.filter((s, i) => s.layer !== "fluid" || i < cutoffIdx);
+        }
         break;
       }
     }

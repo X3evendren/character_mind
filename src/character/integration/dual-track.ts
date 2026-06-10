@@ -7,12 +7,20 @@ let _nextSpanId = 1;
 function nextSpanId(): string { return `s${_nextSpanId++}`; }
 
 interface StreamToken { text: string; done: boolean; toolCalls?: ToolCall[]; reasoningContent?: string; }
-const SENTENCE_END = /[。！？\n]/;
+const SENTENCE_END = /[。！？\n]/g;
 const MIN_SENTENCE_LEN = 4;
 
-function isSentenceBoundary(text: string): boolean {
-  if (text.length < MIN_SENTENCE_LEN) return false;
-  return SENTENCE_END.test(text[text.length - 1]);
+/** Find the last sentence-ending position in the buffer.
+ *  Returns the split point (chars to yield) or -1 if no boundary found. */
+function findSentenceSplit(text: string): number {
+  if (text.length < MIN_SENTENCE_LEN) return -1;
+  let lastIdx = -1;
+  let m: RegExpExecArray | null;
+  SENTENCE_END.lastIndex = 0;
+  while ((m = SENTENCE_END.exec(text)) !== null) {
+    lastIdx = m.index + 1; // include the sentence-end char
+  }
+  return lastIdx;
 }
 
 /** Convert callback-based chatStream to async iterator with abort support. */
@@ -77,13 +85,16 @@ export class SpanBasedGenerator {
         if (token.done) { Object.assign(lastToken, token); break; }
         if (token.text) {
           buffer += token.text;
-          if (isSentenceBoundary(buffer)) {
+          // Yield all complete sentences from the buffer, keep the trailing fragment
+          let splitPoint: number;
+          while ((splitPoint = findSentenceSplit(buffer)) > 0) {
+            const sentence = buffer.slice(0, splitPoint);
+            buffer = buffer.slice(splitPoint);
             const spanId = nextSpanId();
-            const endPos = startPos + buffer.length;
-            yield { type: "append", span: { id: spanId, layer: "fluid", text: buffer, startPos, endPos } };
+            const endPos = startPos + sentence.length;
+            yield { type: "append", span: { id: spanId, layer: "fluid", text: sentence, startPos, endPos } };
             yield { type: "lock", spanId };
             startPos = endPos;
-            buffer = "";
           }
         }
       }

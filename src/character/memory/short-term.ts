@@ -1,6 +1,6 @@
 /** Short-Term Memory — SQLite + FTS5. better-sqlite3 for Node.js */
 import Database from "better-sqlite3";
-import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, type MemoryType } from "./store";
+import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse, type MemoryType } from "./store";
 
 export class ShortTermMemory extends MemoryStore {
   private dbPath: string;
@@ -30,7 +30,8 @@ export class ShortTermMemory extends MemoryStore {
       superseded INTEGER DEFAULT 0, superseded_by TEXT, embedding BLOB
     )`);
     this._db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS stm_fts USING fts5(
-      content, event_type, tags, content=stm, content_rowid=rowid
+      content, event_type, tags, content=stm, content_rowid=rowid,
+      tokenize='trigram'  -- trigram works for CJK + Latin languages
     )`);
   }
 
@@ -125,12 +126,14 @@ export class ShortTermMemory extends MemoryStore {
       });
       await ltmStore.store(upgraded);
       promoted.push(upgraded);
+      // Mark original as superseded to prevent double-promotion by promoteCandidates()
+      this._db!.prepare("UPDATE stm SET superseded=1 WHERE record_id=?").run(r.recordId);
     }
     return promoted;
   }
 
   promoteCandidates(): MemoryRecord[] {
-    return (this._db!.prepare("SELECT * FROM stm WHERE recall_count >= 3").all() as any[]).map((r: any) => this._rowToRecord(r));
+    return (this._db!.prepare("SELECT * FROM stm WHERE recall_count >= 3 AND superseded=0").all() as any[]).map((r: any) => this._rowToRecord(r));
   }
 
   private _trim(): void {
@@ -142,16 +145,16 @@ export class ShortTermMemory extends MemoryStore {
 
   private _rowToRecord(row: any): MemoryRecord {
     return createMemoryRecord({
-      recordId: row[0], content: row[1],
-      emotionalSignature: JSON.parse(row[2] || "{}"),
-      significance: row[3], eventType: row[4],
-      tags: JSON.parse(row[5] || "[]"), timestamp: row[6],
-      trust: row[7], recallCount: row[8],
-      memoryType: (row[9] as MemoryType) ?? "episodic",
-      confidence: row[10] ?? 0.7,
-      superseded: !!row[11],
-      supersededBy: row[12] ?? null,
-      metadata: row[13] ? { embedding: row[13] } : {},
+      recordId: row.record_id, content: row.content,
+      emotionalSignature: safeJsonParse(row.emotion, {}),
+      significance: row.significance, eventType: row.event_type,
+      tags: safeJsonParse(row.tags, []), timestamp: row.timestamp,
+      trust: row.trust, recallCount: row.recall_count,
+      memoryType: (row.memory_type as MemoryType) ?? "episodic",
+      confidence: row.confidence ?? 0.7,
+      superseded: !!row.superseded,
+      supersededBy: row.superseded_by ?? null,
+      metadata: row.embedding ? { embedding: row.embedding } : {},
     });
   }
 }

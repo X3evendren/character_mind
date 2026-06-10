@@ -60,6 +60,11 @@ export class TemporalHorizon {
     const dt = now - this.lastTurnEnd;
     this.retention.sinceLastTurn = dt;
 
+    // Build protention tension from the silent period before user responded
+    if (this.protention.expectingResponse && dt > 0) {
+      this.protention.tension = Math.min(1, this.protention.tension + TENSION_BUILD_RATE * dt);
+    }
+
     // Decay retention
     const lambda = Math.LN2 / RETENTION_HALF_LIFE;
     this.retention.emotionIntensity *= Math.exp(-lambda * dt);

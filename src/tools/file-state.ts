@@ -1,6 +1,7 @@
 /** File State Tracker — dedup reads, enforce read-before-write. */
 
 import { existsSync, statSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { createHash } from "crypto";
 
 interface FileState {
@@ -57,7 +58,7 @@ export class FileStateTracker {
   }
 
   private _resolve(p: string): string {
-    // Simple resolve — caller should pass absolute paths
-    return p.replace(/\\/g, "/");
+    // Normalize to absolute path so "./foo.txt" and "foo.txt" resolve to the same key
+    return resolve(p);
   }
 }

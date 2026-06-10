@@ -24,7 +24,7 @@ export class PostFilter {
   scan(t: string){const m:Array<{p:string;r:string}>=[];for(const[p,r]of Object.entries(this.reps)){if(t.includes(p)){m.push({p,r});this.dc++}}return m}
   replace(t: string):[string,Array<{p:string;r:string}>]{
     const m=this.scan(t);let r=t;
-    for(const x of m){r=r.replace(x.p,x.r);this.rc++}
+    for(const x of m){r=r.replaceAll(x.p,x.r);this.rc++}
     // Strip action descriptions in Chinese parentheses
     for (const pat of ACTION_PATTERNS) {
       if (pat.test(r)) { r = r.replace(pat, ""); this.rc++; }

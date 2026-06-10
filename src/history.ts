@@ -1,7 +1,7 @@
 /**
  * History Store — File persistence + Ctrl+R search. File persistence + search.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFile, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -10,6 +10,8 @@ export class HistoryStore {
   private filePath: string;
   private maxEntries: number;
   private cursor: number = -1; // -1 = at bottom (newest), >=0 = position
+  private dirty = false;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(filePath?: string, maxEntries = 500) {
     this.filePath = filePath ?? join(homedir(), ".character_mind_history");
@@ -26,11 +28,20 @@ export class HistoryStore {
     } catch { /* ignore */ }
   }
 
-  private _save(): void {
+  private _scheduleSave(): void {
+    this.dirty = true;
+    if (this.saveTimer) return; // already scheduled
+    this.saveTimer = setTimeout(() => this._flush(), 5000); // batch writes every 5s
+  }
+
+  private _flush(): void {
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.saveTimer = null;
     try {
       const dir = this.filePath.replace(/[\\/][^\\/]+$/, "");
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(this.filePath, this.entries.join("\n") + "\n", "utf-8");
+      if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFile(this.filePath, this.entries.join("\n") + "\n", "utf-8", () => {});
     } catch { /* ignore */ }
   }
 
@@ -42,7 +53,7 @@ export class HistoryStore {
     this.entries.push(trimmed);
     if (this.entries.length > this.maxEntries) this.entries = this.entries.slice(-this.maxEntries);
     this.cursor = -1;
-    this._save();
+    this._scheduleSave();
   }
 
   /** Navigate up (older entries). Returns the entry or null. */
