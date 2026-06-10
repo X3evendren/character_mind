@@ -103,8 +103,6 @@ export class OpenAICompatProvider {
 	        // Capture thinking output (OpenAI: reasoning_content, Ollama: reasoning)
 	        const rc = (delta as any)?.reasoning_content || (delta as any)?.reasoning || "";
 	        if (rc) reasoningContent += rc;
-	        // Also feed thinking tokens to content when delta.content is empty (Ollama models)
-	        if (!delta?.content && rc && onDelta) await onDelta(rc);
 	        if (chunk.choices[0].finish_reason) finishReason = chunk.choices[0].finish_reason;
         // Accumulate tool calls from stream deltas
         for (const tc of delta?.tool_calls ?? []) {
