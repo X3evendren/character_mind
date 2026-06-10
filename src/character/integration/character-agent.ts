@@ -29,11 +29,13 @@ import { CoreGraphMemory } from "../memory/core-graph";
 import { ArchiveMemory } from "../memory/archive";
 import { SleepCycleMetabolism } from "../memory/metabolism";
 import { FrozenSnapshot } from "../memory/snapshot";
+import { createMemoryRecord } from "../memory/store";
 import { FeedbackLoop } from "../learning/feedback-loop";
 import { SelfReflection } from "../learning/self-reflection";
 import { SkillLibrary } from "../learning/skill-library";
 import { loadAssistantConfig, loadMemoryConfig, ensureSkillsDir } from "./config-loader";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder";
+import { ColdCache, detectEmotionHeuristic, FourLayerColdAnalyzer, type ColdAnalyzeParams } from "./cold-analyzer";
 import { SpanBasedGenerator } from "./dual-track";
 import { createGroundTruth, type GroundTruth } from "../state/ground-truth";
 import { ToolRegistry } from "../../tools/registry";
@@ -111,6 +113,11 @@ export class CharacterAgent {
   initialized = false;
   private firstTurnDone = false;
 
+  /** Cold Path cache — populated asynchronously, consumed by next turn's Hot Path */
+  coldCache: ColdCache | null = null;
+  private coldAnalyzer: FourLayerColdAnalyzer | null = null;
+  private coldPending = false;
+
   /** Shared factual state — Hot Path reads, all writes via tool results */
   groundTruth: GroundTruth = createGroundTruth();
 
@@ -169,18 +176,26 @@ export class CharacterAgent {
     this.longTermMemory = new LongTermMemory(":memory:", this.memConfig.longTermMemorySize);
     this.coreGraph = new CoreGraphMemory(":memory:", this.memConfig.coreGraphMaxNodes, this.memConfig.coreGraphMaxEdges);
     this.archiveMemory = new ArchiveMemory(":memory:");
+
+    // Learning — skillLibrary must be created BEFORE metabolism (metabolism uses it in fullSleep)
+    this.skillLibrary = new SkillLibrary(ensureSkillsDir(opts.configDir));
     this.metabolism = new SleepCycleMetabolism(this.workingMemory, this.shortTermMemory, this.longTermMemory, this.coreGraph, this.archiveMemory, this.skillLibrary);
     this.snapshot = new FrozenSnapshot();
 
-    // Learning
+    // Learning (continued)
     this.feedbackLoop = new FeedbackLoop();
     this.selfReflection = new SelfReflection();
-    this.skillLibrary = new SkillLibrary(ensureSkillsDir(opts.configDir));
 
     // LLM
     this.fastProvider = opts.fastProvider ?? opts.genProvider;
     this.slowProvider = opts.genProvider;
     this.psychologyEngine = new PsychologyEngine(opts.psychProvider, opts.psychModel ?? "");
+
+    // Cold analyzer — runs 4-layer cascaded analysis asynchronously
+    this.coldAnalyzer = new FourLayerColdAnalyzer(
+      opts.psychProvider,
+      opts.genProvider,
+    );
   }
 
   async initialize(): Promise<void> {
@@ -210,7 +225,7 @@ export class CharacterAgent {
     this.temporalHorizon.onTurnStart();
 
     // ═══════════════════════════════════════════
-    // HOT PATH — Generation only
+    // HOT PATH — Generation only (zero LLM calls)
     // ═══════════════════════════════════════════
 
     // Restore memory snapshot
@@ -221,25 +236,18 @@ export class CharacterAgent {
       this.snapshot.freeze({}, ltmRecords, stmRecords, coreSummary);
     }
 
-    // Lightweight emotion analysis (Hot Path — only dominant emotion, not full XML)
-    let emoDominant = "neutral";
-    let emoIntensity = 0.5;
-    try {
-      const lightPsych = await this.psychologyEngine.analyze(
-        { description: input, type: taskMode ? "tool_use" : "social", significance: 0.5 },
-        this.snapshot.formatForPrompt(), this.mindState, this.drives.toDict(), this.config as unknown as Record<string, string>,
-        this.affectiveResidue.vector,
-      );
-      ctx.psychology = lightPsych; // stored for Cold Path use later
-      emoDominant = lightPsych.emotion.dominant;
-      emoIntensity = lightPsych.emotion.intensity;
-    } catch { /* use defaults */ }
+    // Quick emotion detection — rule-based, 0 tokens, <1ms (replaces psych LLM call)
+    const quickEmo = detectEmotionHeuristic(input);
+    const emoDominant = quickEmo.dominant;
+    const emoIntensity = quickEmo.intensity;
 
-    // Fast Track param modulation — emotional tone only
-    const fastShifts = this.modulator.modulateFast(ctx.psychology ?? undefined);
-    this.modulator.applyShifts(fastShifts);
+    // Fast Track param modulation — only if we have cold cache psych data
+    if (this.coldCache) {
+      const fastShifts = this.modulator.modulateFast(this.coldCache);
+      this.modulator.applyShifts(fastShifts);
+    }
 
-    // Build system prompt (Hot Path — capabilities + groundTruth + taskMode)
+    // Build system prompt — reads coldCache (zero LLM)
     ctx.systemPrompt = buildSystemPrompt({
       config: this.config,
       mindstate: this.mindState,
@@ -250,12 +258,15 @@ export class CharacterAgent {
       skillLibrary: this.skillLibrary,
       currentInput: input,
       taskMode,
+      coldCache: this.coldCache,
+      quickEmotion: quickEmo,
+      // Deprecated params kept for backward compat
       emotionDominant: emoDominant,
       emotionIntensity: emoIntensity,
-      affectiveResidueText: this.affectiveResidue.formatForPrompt(),
+      affectiveResidueText: this.coldCache?.affectiveResidueText ?? this.affectiveResidue.formatForPrompt(),
       driveBiasText: this.driveSublimator.buildAttentionBias(this.drives),
-      selfNarrativeText: this.selfModel.formatForHotPath(),
-      temporalHorizonText: this.temporalHorizon.formatForPrompt(),
+      selfNarrativeText: this.coldCache?.selfNarrativeText ?? this.selfModel.formatForHotPath(),
+      temporalHorizonText: this.coldCache?.temporalHorizonText ?? this.temporalHorizon.formatForPrompt(),
       isFirstTurn: !this.firstTurnDone,
     });
     this.firstTurnDone = true;
@@ -303,111 +314,115 @@ export class CharacterAgent {
 
     for (const h of this.hooks) { await h.afterGenerate?.(ctx); }
 
-    // Cold Path delegation
-    await this.runColdPath({ input, response: ctx.response, psychology: ctx.psychology });
+    // Schedule cold analysis — fire-and-forget, does NOT block this turn
+    this.scheduleColdAnalysis(input, ctx.response, taskMode);
+
+    // State updates that don't need LLM (keep these synchronous)
+    this.saturation.positiveInteraction(emoIntensity);
+    this.affectiveResidue.deposit(
+      { dominant: emoDominant, intensity: emoIntensity, pleasure: quickEmo.pleasure },
+      Math.max(0.2, emoIntensity),
+    );
 
     ctx.elapsedMs = Date.now() - startTime;
     return ctx;
   }
 
-  /** Cold Path only — post-generation cognition. Called by GenerationController after span-based generation. */
+  /** Cold Path — now handled by scheduleColdAnalysis (fire-and-forget).
+   *  This method kept for backward compatibility with external callers. */
   async runColdPath(params: { input: string; response: string; psychology?: PsychologyResult }): Promise<PsychologyResult> {
-    const { input, response, psychology: existingPsych } = params;
+    // Delegate to async analyzer
+    if (this.coldAnalyzer && !this.coldPending) {
+      this.scheduleColdAnalysis(params.input, params.response, false);
+    }
+    // Return existing psych or empty result
+    return params.psychology ?? new PsychologyResult();
+  }
 
-    // Full psychology analysis (Cold Path — this is where psych belongs)
-    let psychology = existingPsych ?? null;
-    if (!psychology) {
-      try {
-        psychology = await this.psychologyEngine.analyze(
-          { description: input, type: "social", significance: 0.5 },
-          this.snapshot.formatForPrompt(), this.mindState, this.drives.toDict(), this.config as unknown as Record<string, string>,
-          this.affectiveResidue.vector,
+  /** Schedule asynchronous 4-layer cold analysis. Fire-and-forget, does not block turn. */
+  private scheduleColdAnalysis(input: string, response: string, taskMode: boolean): void {
+    if (!this.coldAnalyzer || this.coldPending) return; // Already running
+    this.coldPending = true;
+
+    const params: ColdAnalyzeParams = {
+      input,
+      response,
+      taskMode,
+      mindState: this.mindState,
+      drives: this.drives.toDict(),
+      assistantConfig: this.config as unknown as Record<string, string>,
+      previousResidueVector: this.affectiveResidue.vector,
+      previousRetention: {
+        emotionDominant: this.temporalHorizon.retention.emotionDominant,
+        emotionIntensity: this.temporalHorizon.retention.emotionIntensity,
+        unfinished: this.temporalHorizon.retention.unfinished,
+      },
+      timeSinceLastTurn: this.temporalHorizon.retention.sinceLastTurn,
+      selfNarrative: this.selfModel.currentChapter,
+      growthLog: this.selfModel.growthLog,
+      snapshot: this.snapshot.formatForPrompt(),
+    };
+
+    this.coldAnalyzer.analyze(params)
+      .then((cache: ColdCache) => {
+        cache.turnGenerated = this.turnCount;
+        this.coldCache = cache;
+        // Apply cold analysis results to state
+        this.affectiveResidue.vector = cache.affectiveVector;
+        if (cache.selfNarrativeText) {
+          this.selfModel.currentChapter = cache.selfNarrativeText;
+        }
+        // Slow param modulation from full psych
+        const slowShifts = this.modulator.modulateSlow(
+          cache, /* memoryCtx */ "", null, cache.selfNarrativeText,
         );
-      } catch { psychology = null; }
+        this.modulator.applyShifts(slowShifts, true);
+        // State evolution
+        this.mindState = this.dynamics.step(this.mindState, this.drives, {
+          affect: { pleasure: cache.emotion.pleasure, arousal: cache.emotion.arousal, dominance: cache.emotion.dominance },
+          attachment_activation: cache.attachment.activation,
+          defense_strength: cache.defense.intensity,
+          control: cache.appraisal.copingPotential,
+        });
+        this.drives.tick(1);
+        this.predictionTracker.observe(this.mindState);
+        // Memory storage
+        this.storeMemoryRecords(input, response, cache);
+        // Metabolism
+        if (this.metabolism.shouldDaydream(this.tickCount, this.memConfig.daydreamIntervalTicks)) {
+          this.metabolism.daydream().catch(() => {});
+        }
+        if (this.metabolism.shouldQuickSleep(this.tickCount, this.memConfig.quickSleepIntervalTicks)) {
+          this.metabolism.quickSleep().catch(() => {});
+        }
+      })
+      .catch((err: Error) => {
+        console.warn("[cold] 4-layer analysis failed:", err.message);
+      })
+      .finally(() => {
+        this.coldPending = false;
+      });
+  }
+
+  /** Store memory records from cold analysis results */
+  private async storeMemoryRecords(input: string, response: string, cold: ColdCache): Promise<void> {
+    const emoKey = cold.emotion.dominant;
+    const emoVal = cold.emotion.intensity;
+    try {
+      await this.workingMemory.store(createMemoryRecord({
+        content: input, eventType: "user_input", significance: 0.5,
+        emotionalSignature: { [emoKey]: emoVal }, tags: ["user", emoKey],
+        memoryType: "episodic", confidence: 0.8,
+      }));
+      await this.workingMemory.store(createMemoryRecord({
+        content: response, eventType: "assistant_response", significance: 0.5,
+        emotionalSignature: { [emoKey]: emoVal }, tags: ["assistant", emoKey],
+        memoryType: "episodic", confidence: 0.7,
+      }));
+      this.snapshot.markDirty();
+    } catch (e) {
+      console.warn("[cold] memory storage failed:", e);
     }
-
-    if (psychology) {
-      const emo = psychology.emotion;
-      const fastShifts: Record<string, number> = {};
-
-      // Drives update
-      if (emo.pleasure > 0.3) this.drives.applyReward("user_praise", 0.5, input);
-      else if (emo.dominant === "sadness") this.drives.applyReward("error", -0.3, input);
-
-      // Saturation + Love Engine
-      this.saturation.positiveInteraction(emo.intensity);
-      const cp = this.continuousParams;
-      this.saturationDetector.observe(1 - cp.precisionSafety, cp.precisionSelfUpdateFromUser);
-      const satMode = this.saturationDetector.evaluate();
-
-      if (cp.gammaSaturationEntropy > 0) this.irreduciblePrior.activate(cp.gammaSaturationEntropy);
-      else this.irreduciblePrior.deactivate();
-      this.irreduciblePrior.checkConvergence(cp.precisionSafety);
-
-      // Love metrics
-      if (emo.pleasure > 0.3) this.loveMetrics.recordPositive();
-      else if (emo.pleasure < -0.2) this.loveMetrics.recordNegative();
-      if (satMode === "saturated") this.loveMetrics.recordDeepConnection();
-
-      // Slow Track baseline modulation
-      const slowShifts = this.modulator.modulateSlow(psychology, "", fastShifts, this.selfModel.formatForPrompt());
-      this.modulator.applyShifts(slowShifts, true);
-    }
-
-    // State evolution
-    const emoKey = psychology?.emotion?.dominant ?? "neutral";
-    const emoVal = psychology?.emotion?.intensity ?? 0.5;
-
-    this.mindState = this.dynamics.step(this.mindState, this.drives,
-      psychology?.mindstate ?? { affect: { pleasure: 0, arousal: 0.5, dominance: 0 } });
-    this.predictionTracker.observe(this.mindState);
-    this.drives.tick(1);
-    this.params.decayAllActivations();
-    this.oathStore.tickAll(0.001);
-    this.loveMetrics.tick(0.001);
-
-    // Memory storage
-    const { createMemoryRecord } = await import("../memory/store");
-    await this.workingMemory.store(createMemoryRecord({
-      content: input, eventType: "user_input", significance: 0.5,
-      emotionalSignature: { [emoKey]: emoVal }, tags: ["user", emoKey],
-      memoryType: "episodic", confidence: 0.8,
-    }));
-    await this.workingMemory.store(createMemoryRecord({
-      content: response, eventType: "assistant_response", significance: 0.5,
-      emotionalSignature: { [emoKey]: emoVal }, tags: ["assistant", emoKey],
-      memoryType: "episodic", confidence: 0.7,
-    }));
-    this.snapshot.markDirty();
-
-    // Memory metabolism
-    if (this.metabolism.shouldDaydream(this.tickCount, this.memConfig.daydreamIntervalTicks))
-      await this.metabolism.daydream();
-    if (this.metabolism.shouldQuickSleep(this.tickCount, this.memConfig.quickSleepIntervalTicks))
-      await this.metabolism.quickSleep();
-
-    // Self-reflection
-    this.selfReflection.fastReflect(input, response, psychology ?? undefined);
-    if (this.selfReflection.shouldSlowReflect(this.turnCount))
-      await this.selfReflection.slowReflect(this.slowProvider, this.selfModel, this.skillLibrary);
-
-    // Affective Residue deposit — passive emotional sediment
-    if (psychology) {
-      const sig = Math.max(0.2, psychology.emotion.intensity);
-      this.affectiveResidue.deposit(
-        { dominant: psychology.emotion.dominant, intensity: psychology.emotion.intensity, pleasure: psychology.emotion.pleasure },
-        sig,
-      );
-      // SelfModel narrative update — psych → natural language self-story
-      this.selfModel.updateNarrative(psychology);
-      // Temporal horizon — set retention for next turn
-      this.temporalHorizon.onTurnEnd(
-        { dominant: psychology.emotion.dominant, intensity: psychology.emotion.intensity },
-        false,
-      );
-    }
-
-    return psychology ?? new PsychologyResult();
   }
 
   /** Consume stale Slow results from aborted turns — feed to memory and self-reflection. */
