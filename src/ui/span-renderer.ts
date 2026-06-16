@@ -44,7 +44,9 @@ export class SpanState {
   apply(op: SpanOp): void {
     switch (op.type) {
       case "append": {
-        op.span.layer = "fluid";
+        // Respect the layer set by the caller (e.g. app.tsx inserts user
+        // input / command output as "locked"). Previously this forced
+        // "fluid", which dimmed user messages and command output.
         this.spans.push(op.span);
         break;
       }

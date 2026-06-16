@@ -298,10 +298,11 @@ export class CharacterAgent {
     // Phase 4: Draft (Fast) + Refine (Slow) + Commit — shared GroundTruth
     for (const h of this.hooks) { await h.beforeBuild?.(ctx); }
 
-    const dualTrack = new SpanBasedGenerator(this.fastProvider, this.slowProvider, this.toolRegistry);
+    const dualTrack = new SpanBasedGenerator(this.fastProvider, this.slowProvider, this.toolRegistry, this.tracer);
     const responseParts: string[] = [];
     const abortController = new AbortController();
 
+    try {
     // Dynamic generation params: saturation + drive style hints
     const hints = this.driveSublimator.buildStyleHints(this.drives);
     const genTemp = Math.max(0.1, Math.min(1.5,
@@ -343,6 +344,17 @@ export class CharacterAgent {
       { dominant: emoDominant, intensity: emoIntensity, pleasure: quickEmo.pleasure },
       Math.max(0.2, emoIntensity),
     );
+    } catch (err: any) {
+      // Generation failed (API error, abort, etc.) — surface an error response
+      // instead of crashing the turn loop. Turn span is ended in finally.
+      ctx.response = ctx.response || `(生成失败: ${err?.message ?? "unknown error"})`;
+      if (turnSpan) turnSpan.setStatus("error");
+    } finally {
+      // Always end the turn span + reset cold-pending guard so a failed turn
+      // doesn't leak an open span or deadlock the next cold analysis.
+      ctx.elapsedMs = Date.now() - startTime;
+      if (turnSpan) this.tracer?.endTurn(turnSpan, ctx.totalTokens, this.turnCount);
+    }
 
     // Checkpoint: save state at turn boundary
     if (this.checkpointManager) {
@@ -351,8 +363,6 @@ export class CharacterAgent {
       this.saveCheckpoint(ctx.systemPrompt);
     }
 
-    ctx.elapsedMs = Date.now() - startTime;
-    if (turnSpan) this.tracer?.endTurn(turnSpan, ctx.totalTokens, this.turnCount);
     return ctx;
   }
 
@@ -476,7 +486,7 @@ export class CharacterAgent {
   }
 
   /** Restore agent state from checkpoint data. */
-  restoreFromCheckpoint(data: { root: { memorySnapshot: string; groundTruthFacts: string[]; conversationHistory: Array<{role:string;content:string}> }; derived: { affectiveResidue: {warmth:number;weight:number;clarity:number;tension:number}; selfNarrative: string; saturation: number; turnCount: number } }): void {
+  async restoreFromCheckpoint(data: { root: { memorySnapshot: string; groundTruthFacts: string[]; conversationHistory: Array<{role:string;content:string}> }; derived: { affectiveResidue: {warmth:number;weight:number;clarity:number;tension:number}; selfNarrative: string; saturation: number; turnCount: number } }): Promise<void> {
     // Restore ground truth facts
     this.groundTruth.facts = [...data.root.groundTruthFacts];
 
@@ -498,7 +508,7 @@ export class CharacterAgent {
 
     // Feed conversation history into working memory for context
     for (const msg of data.root.conversationHistory.slice(-10)) {
-      this.workingMemory.store({
+      await this.workingMemory.store({
         recordId: `rec_${Date.now()}_${Math.random()}`,
         content: msg.content.slice(0, 200),
         emotionalSignature: {},

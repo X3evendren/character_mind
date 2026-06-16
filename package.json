@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "tsx src/dev-entry.ts",
     "start": "tsx src/dev-entry.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "eval": "tsx src/eval/run-eval.ts",
     "eval:safety": "tsx src/eval/run-eval.ts --suite safety",
     "eval:personality": "tsx src/eval/run-eval.ts --suite personality"
@@ -59,6 +61,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
   }
 }

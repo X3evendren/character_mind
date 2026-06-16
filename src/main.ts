@@ -28,7 +28,7 @@ const PSYCH_MODEL = process.env.PSYCH_MODEL || "deepseek-v4-flash";
 const CSI = "\x1b[";
 const C = {
   reset: `${CSI}0m`, cyan: `${CSI}36m`, green: `${CSI}32m`, yellow: `${CSI}33m`,
-  dim: `${CSI}2m`, bold: `${CSI}1m`, white: `${CSI}37m`,
+  red: `${CSI}31m`, dim: `${CSI}2m`, bold: `${CSI}1m`, white: `${CSI}37m`,
 };
 
 function banner() {
@@ -69,12 +69,11 @@ async function main() {
   });
   await agent.initialize();
 
-  // Resume from checkpoint if applicable
+  // Resume from checkpoint if applicable (must run after initialize())
   if (decision.action === "resume" && decision.checkpoint) {
-    agent.restoreFromCheckpoint(recovery.resume(decision.checkpoint));
+    await agent.restoreFromCheckpoint(recovery.resume(decision.checkpoint));
     console.log(`  ${C.green}Resumed from checkpoint.${C.reset}`);
   }
-  await agent.initialize();
   registerBuiltinCommands();
   console.log(`${C.green}ready${C.reset}`);
   console.log(`\n  ${C.bold}${C.cyan}${agent.config.name}${C.reset}${C.bold} · ${C.reset}s=${agent.saturation.s.toFixed(2)}  [/help /quit /stats]\n`);
@@ -127,11 +126,15 @@ async function main() {
         // PromptCommand: send the expanded prompt to the agent
         const start = Date.now();
         process.stdout.write(`${C.yellow}${agent.config.name}: ${C.reset}`);
-        const ctx = await agent.run(result.promptText, async (delta: string) => {
-          process.stdout.write(delta);
-        });
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        console.log(`${C.dim}\n  [t${agent.turnCount}  ${elapsed}s]${C.reset}\n`);
+        try {
+          const ctx = await agent.run(result.promptText, async (delta: string) => {
+            process.stdout.write(delta);
+          });
+          const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+          console.log(`${C.dim}\n  [t${agent.turnCount}  ${elapsed}s]${C.reset}\n`);
+        } catch (e: any) {
+          console.log(`${C.red}\n  ✗ ${e?.message ?? "unknown error"}${C.reset}\n`);
+        }
         rl.prompt(); continue;
       }
       if (result.type === "unknown" && result.output) {
@@ -149,12 +152,17 @@ async function main() {
       beforeBuild: async () => { renderer.setPhase("generating"); },
     }];
 
-    const ctx = await agent.run(input, async (delta: string) => {
-      renderer.onDelta(delta);
-    });
+    try {
+      const ctx = await agent.run(input, async (delta: string) => {
+        renderer.onDelta(delta);
+      });
 
-    if (ctx.totalTokens) renderer.setTokens(ctx.totalTokens);
-    renderer.onEnd(agent.turnCount);
+      if (ctx.totalTokens) renderer.setTokens(ctx.totalTokens);
+      renderer.onEnd(agent.turnCount);
+    } catch (e: any) {
+      renderer.onEnd(agent.turnCount);
+      console.log(`${C.red}  ✗ ${e?.message ?? "unknown error"}${C.reset}\n`);
+    }
     rl.prompt();
   }
 

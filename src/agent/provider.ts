@@ -35,7 +35,7 @@ export class OpenAICompatProvider {
     messages: Array<{ role: string; content: string }>,
     temperature = 0.7,
     maxTokens = 4096,
-    _tools?: any,
+    tools?: any,
     _model = "",
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
@@ -44,6 +44,7 @@ export class OpenAICompatProvider {
       messages: messages as any,
       temperature,
       max_tokens: maxTokens,
+      tools,
     }, { signal });
     const choice = resp.choices?.[0];
     if (!choice) return { content: "", reasoningContent: "", usage: {}, finishReason: "stop", toolCalls: [] };

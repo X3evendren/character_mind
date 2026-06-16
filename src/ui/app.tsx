@@ -72,7 +72,7 @@ export function App() {
 
         // Resume from checkpoint if available
         if (decision.action === "resume" && decision.checkpoint) {
-          a.restoreFromCheckpoint(recovery.resume(decision.checkpoint));
+          await a.restoreFromCheckpoint(recovery.resume(decision.checkpoint));
         }
 
         setAgent(a);
