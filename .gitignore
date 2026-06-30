@@ -1,6 +1,16 @@
 node_modules/
-bun.lock
 *.db
 *.db-wal
 *.db-shm
 dist/
+
+# 运行时产物（代码自动创建，不应入库）
+checkpoints/
+tool-results/
+eval/results/
+config/skills/
+trace-data/
+
+# 环境变量与密钥
+.env
+.env.*

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolve } from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { ToolDef, ToolResult, ToolContext } from "../types";
 import { errorResult, successResult } from "../types";
 
@@ -23,11 +23,14 @@ export const searchContentTool: ToolDef<z.infer<typeof params>, string> = {
   async execute(p, ctx: ToolContext): Promise<ToolResult<string>> {
     const searchPath = resolve(ctx.workingDir, p.path ?? ".");
     try {
+      // SECURITY: pass args as an array, never via a shell-joined string.
+      // execFileSync with no shell avoids command injection from user-supplied
+      // pattern/path/glob values.
       const args = ["--line-number", "--no-heading", "--color=never", "--no-ignore-vcs", p.pattern];
       if (p.glob) args.push("--glob", p.glob);
       args.push(searchPath);
 
-      const stdout = execSync(`rg ${args.map(a => `"${a}"`).join(" ")}`, {
+      const stdout = execFileSync("rg", args, {
         cwd: ctx.workingDir, encoding: "utf-8", timeout: 30000, maxBuffer: 5 * 1024 * 1024,
       });
       const lines = stdout.trim().split("\n").filter(Boolean);
@@ -37,7 +40,7 @@ export const searchContentTool: ToolDef<z.infer<typeof params>, string> = {
       return successResult(output, output);
     } catch (e: any) {
       if (e.status === 1) return successResult("(无匹配)", "");
-      if (e.message?.includes("not found") || e.message?.includes("rg")) {
+      if (e.code === "ENOENT" || e.message?.includes("rg")) {
         return errorResult("rg (ripgrep) is not installed. Install it: https://github.com/BurntSushi/ripgrep");
       }
       return errorResult(`search_content failed: ${e.message}`);

@@ -9,7 +9,6 @@ import type { CommandContext } from "./commands/types";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createInterface } from "readline";
-import { execSync } from "child_process";
 import { StreamRenderer } from "./ui/stream-renderer";
 import { HistoryStore } from "./ui/history";
 import { Tracer, JsonlExporter, ConsoleExporter, CompositeExporter } from "./telemetry";
@@ -101,18 +100,6 @@ async function main() {
   for await (const line of rl) {
     const input = line.trim();
     if (!input) { rl.prompt(); continue; }
-
-    // ── Bash mode: !command → execute shell ──
-    if (input.startsWith("!")) {
-      const cmd = input.slice(1).trim();
-      try {
-        const out = execSync(cmd, { encoding: "utf-8", timeout: 30000 });
-        console.log(out);
-      } catch (e: any) {
-        console.log(`${C.yellow}${e.stderr || e.message}${C.reset}`);
-      }
-      rl.prompt(); continue;
-    }
 
     // ── Command dispatch ──
     if (isCommandInput(input)) {
