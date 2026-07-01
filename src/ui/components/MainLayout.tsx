@@ -42,16 +42,11 @@ export function MainLayout({
       notificationCount: notifications.length,
     }),
 
-    // Main content area: side panel (optional) + chat
+    // Main content area: chat + side panel (optional)
     React.createElement(
       Box,
       { flexDirection: "row", flexGrow: 1 },
-      // Left dashboard panel (only when width >= 100)
-      showDashboard
-        ? React.createElement(Dashboard, null)
-        : null,
-
-      // Right: chat + input
+      // Left: chat + input
       React.createElement(
         Box,
         { flexDirection: "column", flexGrow: 1 },
@@ -84,6 +79,14 @@ export function MainLayout({
           }),
         ),
       ),
+
+      // Separator + right dashboard panel (only when width >= 100)
+      showDashboard
+        ? React.createElement(Text, { color: theme.colors.textDim }, "│")
+        : null,
+      showDashboard
+        ? React.createElement(Dashboard, null)
+        : null,
     ),
   );
 }
