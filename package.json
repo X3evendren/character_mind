@@ -58,7 +58,8 @@
     "ws": "*",
     "xss": "*",
     "yaml": "*",
-    "zod": "*"
+    "zod": "*",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
