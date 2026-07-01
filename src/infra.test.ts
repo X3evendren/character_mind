@@ -69,13 +69,13 @@ describe("MCP Tool Loader", () => {
   it("MCP tool formatResult returns plain output", () => {
     const client = {} as any;
     const tool = mcpToolToDef(client, "test", mockSchema);
-    expect(tool.formatResult("plain output")).toBe("plain output");
+    expect(tool.formatResult("plain output", {} as any)).toBe("plain output");
   });
 
   it("MCP tool formatError wraps error", () => {
     const client = {} as any;
     const tool = mcpToolToDef(client, "test", mockSchema);
-    expect(tool.formatError("something broke")).toContain("something broke");
+    expect(tool.formatError("something broke", {} as any)).toContain("something broke");
   });
 });
 
@@ -87,10 +87,10 @@ describe("ChannelRegistry", () => {
   let registry: ChannelRegistry;
 
   class MockChannel {
-    config = { name: "mock", autoConnect: false, reconnectMs: 0, maxMessageLength: 1000 };
-    state = "disconnected" as const;
-    connect = async () => { this.state = "connected" as const; };
-    disconnect = async () => { this.state = "disconnected" as const; };
+    config = { name: "mock", autoConnect: false, reconnectMs: 0, maxMessageLength: 1000 } as any;
+    state: string = "disconnected";
+    connect = async () => { this.state = "connected"; };
+    disconnect = async () => { this.state = "disconnected"; };
     sendText = async (_chatId: string, text: string) => ({ success: true, messageId: "1" });
     onMessageHandlers: Array<(msg: ChannelMessage) => Promise<void>> = [];
     onMessage(h: any) { this.onMessageHandlers.push(h); }

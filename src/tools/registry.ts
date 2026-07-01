@@ -25,6 +25,34 @@ export class ToolRegistry {
     return this.tools.get(name);
   }
 
+  /** List all unique tools (deduplicated by name, excluding aliases). */
+  list(): ToolDef[] {
+    const seen = new Set<string>();
+    const result: ToolDef[] = [];
+    for (const tool of this.tools.values()) {
+      if (!seen.has(tool.name)) {
+        seen.add(tool.name);
+        result.push(tool);
+      }
+    }
+    return result;
+  }
+
+  /** Remove a tool and all its aliases from the registry. */
+  unregister(name: string): boolean {
+    const tool = this.tools.get(name);
+    if (!tool) return false;
+    this.tools.delete(tool.name);
+    if (tool.aliases) {
+      for (const alias of tool.aliases) {
+        if (this.tools.get(alias) === tool) {
+          this.tools.delete(alias);
+        }
+      }
+    }
+    return true;
+  }
+
   /** Generate OpenAI function-calling tool definitions. */
   getDefinitions(): Array<Record<string, unknown>> {
     const defs: Array<Record<string, unknown>> = [];

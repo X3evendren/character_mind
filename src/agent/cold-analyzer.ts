@@ -1,6 +1,8 @@
 /** Cold Path cache — consumed by Hot Path on the next turn. */
-import { PsychologyResult, EmotionResult, AppraisalResult, MotivationResult, AttachmentResult, DefenseResult, RelationResult } from "../mind/psychology-engine";
-import type { AffectiveVector } from "../consciousness/affective-residue";
+import { PsychologyResult, EmotionResult, AppraisalResult, MotivationResult, AttachmentResult, DefenseResult, RelationResult } from "../mind/psychology";
+
+// AffectiveVector was in ../consciousness/affective-residue (removed during restructuring)
+export interface AffectiveVector { warmth: number; weight: number; clarity: number; tension: number; }
 
 export interface ColdCache {
   // Layer 0
@@ -246,7 +248,7 @@ ${params.input.slice(0, 200)}
     layer0Text: string,
     layer1Text: string,
   ): Promise<PsychologyResult> {
-    const { PsychologyEngine } = await import("../mind/psychology-engine");
+    const { PsychologyEngine } = await import("../mind/psychology");
     const engine = new PsychologyEngine(this.psychProvider, "");
 
     const affectiveContext = {
