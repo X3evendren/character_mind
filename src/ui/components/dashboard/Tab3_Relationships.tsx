@@ -1,11 +1,11 @@
 import React from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../../theme/context";
+import { useThemeStore } from "../../stores/theme-store";
 import { useAgentSnapshot } from "../../agent-state";
 import { ProgressBar } from "../../widgets/ProgressBar";
 
 export function Tab3_Relationships() {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const snap = useAgentSnapshot();
 
   if (!snap) {

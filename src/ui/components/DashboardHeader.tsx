@@ -1,13 +1,13 @@
 import React, { useRef, useEffect } from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { useAgentSnapshot } from "../agent-state";
 import { Sparkline } from "../widgets/Sparkline";
 
 const HISTORY_MAX = 20;
 
 export function DashboardHeader() {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const snapshot = useAgentSnapshot();
   const historyRef = useRef<number[]>([]);
 

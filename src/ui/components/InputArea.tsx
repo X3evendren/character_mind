@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { MultilineEditor } from "./MultilineEditor";
 import { Autocomplete } from "./Autocomplete";
 import type { AutocompleteItem } from "./Autocomplete";
@@ -74,7 +74,7 @@ export function InputArea({
   disabled?: boolean;
   placeholder?: string;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const [text, setText] = useState("");
   const [autocompleteVisible, setAutocompleteVisible] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);

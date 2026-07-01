@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 export interface AutocompleteItem {
   label: string;
@@ -19,7 +19,7 @@ export function Autocomplete({
   visible: boolean;
   category?: string;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
 
   if (!visible || items.length === 0) return null;
 

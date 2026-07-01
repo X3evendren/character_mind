@@ -1,6 +1,6 @@
 import React from "react";
 import { Text } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 const TOOL_ICONS: Record<string, string> = {
   read_file: "📄", exec_command: "$", search_files: "🔍", search_content: "🔎",
@@ -10,7 +10,7 @@ const TOOL_ICONS: Record<string, string> = {
 export function ToolCallCard({ tool, args, success, outputPreview, durationMs }: {
   tool: string; args: Record<string, unknown>; success: boolean; outputPreview: string; durationMs: number;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const icon = TOOL_ICONS[tool] ?? "↳";
   const detail = tool === "exec_command" ? (args.command as string)?.slice(0, 60)
     : tool === "read_file" ? (args.path as string)?.slice(0, 60)

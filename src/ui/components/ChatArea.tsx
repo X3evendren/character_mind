@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { Message } from "./Message";
 import type { ChatMessage } from "./Message";
 
@@ -11,7 +11,7 @@ export function ChatArea({ messages, maxVisible, onRetry, onEdit, onBranch }: {
   onEdit?: (msgId: string, newText: string) => void;
   onBranch?: (msgId: string) => void;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
 
   // Show most recent messages up to maxVisible
   const limit = maxVisible ?? 50;

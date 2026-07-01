@@ -1,11 +1,11 @@
 import React from "react";
 import { Text } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 export function Heatmap({ items, width = 10 }: {
   items: Array<{ label: string; value: number }>; width?: number;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   return React.createElement(Text, null,
     ...items.map(({ label, value }) => {
       const filled = Math.round(Math.max(0, Math.min(1, value)) * width);

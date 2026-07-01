@@ -1,11 +1,11 @@
 import React from "react";
 import { Text } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 const SPARK_CHARS = ["▁","▂","▃","▄","▅","▆","▇","█"];
 
 export function Sparkline({ data, width = 20, label }: { data: number[]; width?: number; label?: string }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   if (data.length === 0) return React.createElement(Text, null);
   const min = Math.min(...data); const max = Math.max(...data); const range = max - min || 1;
   const sampled = data.length <= width ? data : data.slice(-width);

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { Dashboard } from "./Dashboard";
 import { StatusBar } from "./StatusBar";
 import { ChatArea } from "./ChatArea";
@@ -23,7 +23,7 @@ export function MainLayout({
   agentName: string;
   statusText?: string;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 80;
 

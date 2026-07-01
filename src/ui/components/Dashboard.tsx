@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { DashboardHeader } from "./DashboardHeader";
 import { Tab1_Overview } from "./dashboard/Tab1_Overview";
 import { Tab2_Details } from "./dashboard/Tab2_Details";
@@ -13,7 +13,7 @@ export function Dashboard({ activeTab, onTabChange }: {
   activeTab?: number;
   onTabChange?: (tab: number) => void;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const [internalTab, setInternalTab] = useState(0);
   const tab = activeTab ?? internalTab;
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 export function MessageMenu({ isUser, onRetry, onEdit, onBranch, onClose }: {
   isUser: boolean;
@@ -9,7 +9,7 @@ export function MessageMenu({ isUser, onRetry, onEdit, onBranch, onClose }: {
   onBranch?: () => void;
   onClose: () => void;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const items: Array<{ label: string; key: string; action?: () => void }> = [];
 
   if (!isUser && onRetry) {

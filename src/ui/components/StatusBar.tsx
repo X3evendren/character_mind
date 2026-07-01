@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { useAgentSnapshot } from "../agent-state";
 
 export function StatusBar({
@@ -10,7 +10,7 @@ export function StatusBar({
   agentName: string;
   notificationCount: number;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const snap = useAgentSnapshot();
 
   const turnCount = snap?.turnCount ?? 0;

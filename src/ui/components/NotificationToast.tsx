@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 export type ToastType = "info" | "success" | "warning" | "error";
 
@@ -9,7 +9,7 @@ export function NotificationToast({ message, type, visible }: {
   type?: ToastType;
   visible: boolean;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
 
   if (!visible || !message) return null;
 

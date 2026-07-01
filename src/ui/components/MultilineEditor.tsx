@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Text, Box, useInput } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 
 /** Cursor characters: block at end, vertical bar within text */
 function renderLineWithCursor(line: string, cursorCol: number, isActiveLine: boolean): string {
@@ -65,7 +65,7 @@ export function MultilineEditor({
   placeholder?: string;
   disabled?: boolean;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const [lines, setLines] = useState<string[]>([""]);
   const [cursorLine, setCursorLine] = useState(0);
   const [cursorCol, setCursorCol] = useState(0);
