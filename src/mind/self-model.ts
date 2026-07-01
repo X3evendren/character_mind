@@ -29,6 +29,19 @@ export interface KnownFact {
   confidence: number; // 0-1
 }
 
+export interface BehavioralScript {
+  /** The trigger phrase or context that activates this script */
+  trigger: string;
+  /** Situational context in which this script applies */
+  context: string;
+  /** Ordered sequence of actions to execute */
+  actionSequence: string[];
+  /** Estimated success rate (0–1) */
+  successRate: number;
+  /** Number of times this script has been used */
+  usageCount: number;
+}
+
 export class SelfModel {
   coreIdentity = "";
   growthLog: GrowthEvent[] = [];
@@ -42,6 +55,9 @@ export class SelfModel {
   relationship: RelationshipState = { trust: 0.3, familiarity: 0.1, lastInteraction: 0 };
   patterns: UserPatterns = { activeHours: [], avgMessageLength: 0, frequentRequests: [] };
   knownFacts: KnownFact[] = [];
+
+  /** Compiled behavioral scripts — learned action patterns */
+  behavioralScripts: BehavioralScript[] = [];
 
   /** Operational capability boundary */
   capabilities = {
@@ -88,6 +104,56 @@ export class SelfModel {
   initFromConfig(config: Record<string, string>): void {
     const name = config.name ?? "助手";
     this.coreIdentity = `我是${name}。${config.essence ?? ""} ${config.traits ?? ""}`;
+  }
+
+  // ── Behavioral Scripts ──
+
+  /**
+   * Compile a new behavioral script from a trigger and action sequence.
+   * If a matching script already exists, increments its usage count and
+   * updates the action sequence (reinforcement learning).
+   */
+  compileScript(trigger: string, actionSequence: string[]): void {
+    const existing = this.behavioralScripts.find(s => s.trigger === trigger);
+    if (existing) {
+      existing.actionSequence = actionSequence;
+      existing.usageCount += 1;
+      // Small boost to success rate on recompilation (consolidation)
+      existing.successRate = Math.min(1, existing.successRate + 0.02);
+    } else {
+      this.behavioralScripts.push({
+        trigger,
+        context: "",
+        actionSequence,
+        successRate: 0.3, // initial uncertainty
+        usageCount: 1,
+      });
+      // Prune old scripts if too many
+      if (this.behavioralScripts.length > 50) {
+        this.behavioralScripts = this.behavioralScripts.slice(-50);
+      }
+    }
+  }
+
+  /**
+   * Retrieve behavioral scripts matching a given context string.
+   * Uses simple substring matching on trigger + context fields.
+   * Returns scripts sorted by (successRate × log(1 + usageCount)).
+   */
+  retrieveScript(context: string): BehavioralScript[] {
+    const lower = context.toLowerCase();
+    const matched = this.behavioralScripts.filter(s =>
+      s.trigger.toLowerCase().includes(lower) ||
+      s.context.toLowerCase().includes(lower) ||
+      lower.includes(s.trigger.toLowerCase()),
+    );
+
+    // Score: success rate weighted by log-usage (explore/exploit balance)
+    return matched.sort((a, b) => {
+      const scoreA = a.successRate * Math.log(1 + a.usageCount);
+      const scoreB = b.successRate * Math.log(1 + b.usageCount);
+      return scoreB - scoreA;
+    });
   }
 
   // ── Interaction tracking ──

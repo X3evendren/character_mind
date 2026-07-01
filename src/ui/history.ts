@@ -56,34 +56,5 @@ export class HistoryStore {
     this._scheduleSave();
   }
 
-  /** Navigate up (older entries). Returns the entry or null. */
-  up(): string | null {
-    if (this.entries.length === 0) return null;
-    if (this.cursor === -1) this.cursor = this.entries.length - 1;
-    else this.cursor = Math.max(0, this.cursor - 1);
-    return this.entries[this.cursor];
-  }
-
-  /** Navigate down (newer entries). Returns the entry or null. */
-  down(): string | null {
-    if (this.entries.length === 0 || this.cursor === -1) return null;
-    this.cursor++;
-    if (this.cursor >= this.entries.length) { this.cursor = -1; return null; }
-    return this.entries[this.cursor];
-  }
-
-  /** Reset cursor to bottom */
-  resetCursor(): void { this.cursor = -1; }
-
-  /** Whether cursor is at the newest position (not navigating history) */
-  get atNewest(): boolean { return this.cursor === -1; }
-
-  /** Search entries containing query (case-insensitive). Returns matching entries. */
-  search(query: string): string[] {
-    if (!query.trim()) return [];
-    const lower = query.toLowerCase();
-    return this.entries.filter(e => e.toLowerCase().includes(lower)).slice(-20).reverse();
-  }
-
   get length(): number { return this.entries.length; }
 }

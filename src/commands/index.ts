@@ -9,6 +9,7 @@ import { statsCommand } from "./builtin/stats";
 import { modelCommand } from "./builtin/model";
 import { dreamCommand } from "./builtin/dream";
 import { thinkCommand } from "./builtin/think";
+import { themeCommand } from "./builtin/theme";
 
 export function registerBuiltinCommands(): void {
   // Priority commands (execute outside turn lock)
@@ -23,6 +24,7 @@ export function registerBuiltinCommands(): void {
   registerCommand(modelCommand);
   registerCommand(dreamCommand);
   registerCommand(thinkCommand);
+  registerCommand(themeCommand);
 }
 
 // Public API

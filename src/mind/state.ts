@@ -5,6 +5,8 @@
  * Single source of truth for all psychological modules.
  * 7D state: pleasure, arousal, dominance, control, attachment, defense, goal_tension
  */
+import { clamp } from "../utils";
+
 export class MindState {
   // PAD affect
   pleasure: number;    // -1.0 to 1.0
@@ -191,8 +193,4 @@ export class MindState {
       timestamp: d.timestamp ?? 0.0,
     });
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
 }

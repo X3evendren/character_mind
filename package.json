@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "tsx src/dev-entry.ts",
     "start": "tsx src/dev-entry.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "eval": "tsx src/eval/run-eval.ts",
     "eval:safety": "tsx src/eval/run-eval.ts --suite safety",
     "eval:personality": "tsx src/eval/run-eval.ts --suite personality"
@@ -45,6 +47,7 @@
     "semver": "*",
     "shell-quote": "*",
     "signal-exit": "*",
+    "sql.js": "^1.14.1",
     "strip-ansi": "*",
     "supports-hyperlinks": "*",
     "tsx": "^4.21.0",
@@ -55,10 +58,12 @@
     "ws": "*",
     "xss": "*",
     "yaml": "*",
-    "zod": "*"
+    "zod": "*",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
   }
 }

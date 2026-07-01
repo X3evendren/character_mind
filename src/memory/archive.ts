@@ -1,8 +1,5 @@
 /** Archive Memory — Final resting place for superseded/expired memories.
  *  Timeline-only retrieval. TTL hard deletion is the ONLY deletion path.
- *
-
-
  */
 import Database from "better-sqlite3";
 import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse } from "./store";
@@ -11,7 +8,7 @@ export class ArchiveMemory extends MemoryStore {
   private dbPath: string;
   private maxItems: number;
   private ttlSeconds: number;
-  private _db: Database | null = null;
+  private _db: SqliteAdapter | null = null;
 
   constructor(dbPath = ":memory:", maxItems = 2000, ttlDays = 90) {
     super();
@@ -22,12 +19,11 @@ export class ArchiveMemory extends MemoryStore {
 
   get length(): number {
     if (!this._db) return 0;
-    return (this._db.prepare("SELECT COUNT(*) as c FROM archive").get() as any).c;
+    return (this._db.get("SELECT COUNT(*) as c FROM archive") as any).c;
   }
 
   async initialize(): Promise<void> {
-    this._db = new Database(this.dbPath);
-    this._db.pragma("journal_mode = WAL");
+    this._db = await SqliteAdapter.open(this.dbPath);
     this._db.exec(`CREATE TABLE IF NOT EXISTS archive (
       record_id TEXT PRIMARY KEY, content TEXT NOT NULL, emotion TEXT DEFAULT '{}',
       significance REAL DEFAULT 0.5, event_type TEXT DEFAULT 'unknown', tags TEXT DEFAULT '[]',
@@ -42,13 +38,14 @@ export class ArchiveMemory extends MemoryStore {
     const rid = record.recordId || `arc_${Date.now()}_${this.length}`;
     record.recordId = rid;
     const now = Date.now() / 1000;
-    this._db!.prepare("INSERT OR REPLACE INTO archive VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
+    this._db!.run("INSERT OR REPLACE INTO archive VALUES (?,?,?,?,?,?,?,?,?,?,?)",
       rid, record.content, JSON.stringify(record.emotionalSignature),
       record.significance, record.eventType, JSON.stringify(record.tags),
       record.timestamp, now, now + this.ttlSeconds, record.recallCount,
       record.metadata?.originalLayer ?? "ltm",
     );
     this._trim();
+    this._db!.save();
     return rid;
   }
 
@@ -61,17 +58,19 @@ export class ArchiveMemory extends MemoryStore {
   async search(_e?: number[] | null, filters?: Record<string, unknown> | null, n = 5): Promise<MemoryRecord[]> {
     const from = (filters?.from as number) ?? 0;
     const to = (filters?.to as number) ?? (Date.now() / 1000);
-    const rows = this._db!.prepare(
-      "SELECT * FROM archive WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT ?"
-    ).all(from, to, n) as any[];
+    const rows = this._db!.all(
+      "SELECT * FROM archive WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT ?",
+      from, to, n,
+    ) as any[];
     return rows.map((r: any) => this._rowToRecord(r));
   }
 
   getRecent(n = 20): MemoryRecord[] {
     if (!this._db) return [];
-    const rows = this._db!.prepare(
-      "SELECT * FROM archive ORDER BY timestamp DESC LIMIT ?"
-    ).all(n) as any[];
+    const rows = this._db!.all(
+      "SELECT * FROM archive ORDER BY timestamp DESC LIMIT ?",
+      n,
+    ) as any[];
     return rows.map((r: any) => this._rowToRecord(r));
   }
 
@@ -83,9 +82,9 @@ export class ArchiveMemory extends MemoryStore {
   async forget(): Promise<number> {
     if (!this._db) return 0;
     const now = Date.now() / 1000;
-    return this._db!.prepare(
-      "DELETE FROM archive WHERE ttl < ?"
-    ).run(now).changes;
+    const result = this._db!.run("DELETE FROM archive WHERE ttl < ?", now);
+    this._db!.save();
+    return result.changes;
   }
 
   /** Move superseded LTM records to archive. */
@@ -107,18 +106,19 @@ export class ArchiveMemory extends MemoryStore {
   async purge(recordIds: string[]): Promise<number> {
     let count = 0;
     for (const id of recordIds) {
-      const result = this._db!.prepare("DELETE FROM archive WHERE record_id = ?").run(id);
-      count += result.changes;
+      count += this._db!.run("DELETE FROM archive WHERE record_id = ?", id).changes;
     }
+    this._db!.save();
     return count;
   }
 
   private _trim(): void {
-    const count = (this._db!.prepare("SELECT COUNT(*) as c FROM archive").get() as any).c;
+    const count = (this._db!.get("SELECT COUNT(*) as c FROM archive") as any).c;
     if (count > this.maxItems) {
-      this._db!.prepare(
-        "DELETE FROM archive WHERE record_id IN (SELECT record_id FROM archive ORDER BY ttl ASC, significance ASC LIMIT ?)"
-      ).run(count - this.maxItems);
+      this._db!.run(
+        "DELETE FROM archive WHERE record_id IN (SELECT record_id FROM archive ORDER BY ttl ASC, significance ASC LIMIT ?)",
+        count - this.maxItems,
+      );
     }
   }
 

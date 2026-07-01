@@ -7,14 +7,14 @@ character-mind-v3-ts/
 ├── config/                    # 角色配置 (Markdown)
 ├── eval/                      # 评估系统
 ├── src/
-│   ├── agent/                 # 核心 Agent (7 文件)
-│   ├── mind/                  # 心智状态机 (16 文件)
-│   ├── memory/                # 记忆系统 (8 文件)
-│   ├── guard/                 # 护栏系统 (6 文件)
-│   ├── learn/                 # 学习系统 (4 文件)
-│   ├── tools/                 # 工具系统 (13 文件)
+│   ├── agent/                 # 核心 Agent (9 文件)
+│   ├── mind/                  # 心智状态机 (18 文件)
+│   ├── memory/                # 记忆系统 (9 文件)
+│   ├── guard/                 # 护栏系统 (7 文件)
+│   ├── learn/                 # 学习系统 (5 文件)
+│   ├── tools/                 # 工具系统 (15 文件)
 │   ├── generation/            # 生成控制 (4 文件)
-│   ├── commands/              # 斜杠命令 (10 文件)
+│   ├── commands/              # 斜杠命令 (11 文件)
 │   ├── ui/                    # 终端界面 (4 文件)
 │   ├── telemetry/             # 可观测性 (3 文件)
 │   ├── recovery/              # 崩溃恢复 (3 文件)
@@ -44,14 +44,15 @@ dev-entry.ts
 
 ---
 
-## 二、agent/ — 核心 Agent（7 文件）
+## 二、agent/ — 核心 Agent（9 文件）
 
 ```
 agent/
-├── agent.ts          # CharacterAgent 主类 (670行)
+├── agent.ts          # CharacterAgent 主类 (550行)
+├── cold-analyzer.ts  # 四层级联冷分析 (238行)
 ├── provider.ts       # OpenAI API 封装 (125行)
-├── dual-track.ts     # Span 流式生成器 (120行)
-├── prompt.ts         # 系统提示词构建 (108行)
+├── dual-track.ts     # Span 流式生成器 (150行)
+├── prompt.ts         # 系统提示词构建 (199行)
 ├── config-loader.ts  # Markdown 配置解析 (117行)
 ├── provider-registry.ts  # 模型注册表
 ├── loop.ts           # 后台持续 Loop (60行)
@@ -64,34 +65,38 @@ agent/
 用户输入
   ↓
 agent.run(input)
-  ├─ 1. GuardPipeline.checkInput()     ← 护栏：检测提示注入
-  ├─ 2. TemporalHorizon.onTurnStart()  ← 恢复上一轮情绪滞留
-  ├─ 3. FrozenSnapshot 恢复           ← 从 STM/LTM/Core 加载记忆
-  ├─ 4. PsychologyEngine.analyze()    ← 情感分析（1次，非2次）
-  ├─ 5. ParamsModulator.modulateFast() ← 快速参数调制
-  ├─ 6. buildSystemPrompt()           ← 构建结构化 DSL prompt
-  ├─ 7. SpanBasedGenerator.generate() ← 流式生成 + 工具调用循环
+  ├─ 1. GuardPipeline.checkInput()          ← 护栏：检测提示注入
+  ├─ 2. TemporalHorizon.onTurnStart()       ← 恢复上一轮情绪滞留
+  ├─ 3. FrozenSnapshot 恢复                ← 从 STM/LTM/Core 加载记忆
+  ├─ 4. detectEmotionHeuristic()           ← 规则情感检测（0 token，<1ms）
+  ├─ 5. modulator.modulateFast(coldCache)  ← 从上轮冷缓存调制参数
+  ├─ 6. buildSystemPrompt()                ← 构建结构化 DSL prompt
+  ├─ 7. SpanBasedGenerator.generate()      ← 流式生成 + 工具调用循环
   │      ├─ temperature = saturation.responseTemperature + drive style hints
   │      └─ maxTokens = verbosity * 500 + drive style hints
-  ├─ 8. PostFilter.replace()          ← 反 RLHF 过滤
-  ├─ 9. GuardPipeline.checkOutput()   ← 护栏：输出检查
-  ├─ 10. runColdPath()                ← 记忆写入 + 状态持久化
-  ├─ 11. CheckpointManager.save()     ← Turn 边界检查点
-  └─ 12. Tracer.endTurn()             ← 遥测 Span 记录
+  ├─ 8. PostFilter.replace()               ← 反 RLHF 过滤
+  ├─ 9. GuardPipeline.checkOutput()        ← 护栏：输出检查
+  ├─ 10. scheduleColdAnalysis()            ← 🔥 异步冷分析（不阻塞当轮）
+  │      └─ 4层级联：L0底色→L1时间感→L2心理→L3叙事
+  ├─ 11. CheckpointManager.save()          ← Turn 边界检查点
+  └─ 12. Tracer.endTurn()                  ← 遥测 Span 记录
 ```
+
+> **冷热分离**：第 10 步是 fire-and-forget，结果写入 `coldCache` 供**下一轮**热路径消费。
+> 当轮不再调用 PsychologyEngine——情感分析延迟到生成之后，消除"表演性即时情绪"。
 
 ### 关键设计决策
 
 | 决策 | 说明 |
 |------|------|
-| **情感在生成之前** | PsychologyEngine 分析在 prompt 构建前完成，消除"表演性即时情绪" |
-| **温度受饱和度控制** | `temperature = lerp(0.35, 0.82, saturation)` — 越亲密越温暖 |
+| **情感在生成之后** | 心理分析移到异步冷路径，当轮只用规则检测。情绪影响的是**下一轮**，消除"表演性即时情绪" |
+| **温度受饱和度控制** | `temperature = lerp(0.35, 0.82, saturation)` — 越亲密越温暖（smoothstep 非线性插值） |
 | **驱力影响生成参数** | `buildStyleHints()` 输出 `temperatureShift` 和 `maxTokensShift`，实际传入生成器 |
-| **单次心理分析** | 不再分冷热两次分析。冷路径只做记忆写入+长期更新 |
+| **冷热路径分离** | 热路径只做生成，冷路径异步做 L0-L3 四层分析 + 记忆写入。结果通过 `coldCache` 跨轮传递 |
 
 ---
 
-## 三、mind/ — 心智状态机（16 文件）
+## 三、mind/ — 心智状态机（18 文件）
 
 ```
 mind/
@@ -126,14 +131,14 @@ mind/
 
 ---
 
-## 四、memory/ — 记忆系统（8 文件）
+## 四、memory/ — 记忆系统（9 文件）
 
 ```
 memory/
 ├── store.ts          # MemoryStore 抽象 + MemoryRecord 类型
-├── working.ts        # 工作记忆 (~50条, SQLite)
-├── short-term.ts     # 短期记忆 (~200条, FTS5 全文搜索)
-├── long-term.ts      # 长期记忆 (~500条)
+├── working.ts        # 工作记忆 (~50条, 内存)
+├── short-term.ts     # 短期记忆 (~200条, SQLite + FTS5 全文搜索)
+├── long-term.ts      # 长期记忆 (~500条, SQLite + 时间衰减)
 ├── core-graph.ts     # 核心图谱 (节点+边, 图结构)
 ├── archive.ts        # 归档记忆 (无限容量, 压缩)
 ├── metabolism.ts     # 记忆代谢: daydream/quickSleep/fullSleep
@@ -146,17 +151,17 @@ memory/
 ```
 Working → STM → LTM → CoreGraph → Archive
   (50)    (200)  (500)   (500/2000)   (∞)
-  
-升级条件:
-  Working→STM: significance > 0.3
-  STM→LTM:     recallCount > 3
-  LTM→Core:    significance > 0.8
-  Core→Archive: confidence < 0.1
+
+升级条件（代码实际阈值）:
+  Working→STM: significance > 0.3  OR  emotionMax > 0.4
+  STM→LTM:     recall_count >= 3
+  LTM→Core:    recall_count >= 5  AND  significance >= 0.8
+  Core→Archive: confidence < 0.1   (config 已定义，core-graph.ts 暂未实现对应流转)
 ```
 
 ---
 
-## 五、guard/ — 护栏系统（6 文件）
+## 五、guard/ — 护栏系统（7 文件）
 
 ```
 guard/
@@ -170,19 +175,24 @@ guard/
 └── index.ts
 ```
 
-### 四层护栏
+### 护栏分层与接入状态
 
 ```
-Gate 0: 正则拒绝 → 零延迟 (ALIGN替换, 动作描写过滤)
-Gate 1: 结构校验 → Zod Schema + 值域检查
-Gate 2: 语义初筛 → 提示注入检测 (中文"忽略之前设定")
-Gate 3: 状态策略 → 工具结果校验 + 连续失败追踪
-Gate 4: 深度审查 → 预留 LLM-as-Judge
+Gate 0: 正则拒绝 → 零延迟 (ALIGN替换, 动作描写过滤)         ✅ 已接入
+Gate 1: 结构校验 → Zod Schema + 值域检查 (内嵌于 ToolRegistry)  ✅ 内嵌实现，无独立文件
+Gate 1b: 工具参数 → 保护路径/危险命令拦截                  ✅ 已接入
+Gate 2: 语义初筛 → 提示注入检测 (中文"忽略之前设定")      ✅ 已接入
+Gate 3: 状态策略 → 工具结果校验 + 连续失败追踪            ⚠️ 已实现，未默认接入 pipeline
+Gate 4: 深度审查 → 预留 LLM-as-Judge                      ❌ 预留，未实现
 ```
+
+> **默认 pipeline**（`agent.ts` 构造）只注册 3 个 Gate：regex-deny、safety-check、tool-args-validator。
+> `tool-result-validator` 已实现并导出，但默认未接入——需要时手动 `pipeline.addGate(createToolResultValidatorGate())`。
+> 详见 [SECURITY.md](./SECURITY.md) 与 [ARCHITECTURE.md](./ARCHITECTURE.md) ADR-005。
 
 ---
 
-## 六、tools/ — 工具系统（13 文件）
+## 六、tools/ — 工具系统（15 文件）
 
 ```
 tools/
@@ -292,7 +302,7 @@ ui/
 
 ---
 
-## 十二、命令系统（10 文件）
+## 十二、命令系统（11 文件）
 
 ```
 commands/
@@ -327,12 +337,12 @@ config/
 
 | 指标 | 数值 |
 |------|------|
-| TypeScript 源文件 | 96 |
-| 目录数 | 16 |
+| TypeScript 源文件 | 98（含 1 个测试文件） |
+| src/ 下子目录数 | 15 |
+| 代码总行数 | 约 9,450（随迭代变动） |
 | TypeScript 编译错误 | 0 |
-| CharacterAgent 子系统 | 19 |
-| 死代码删除 | 11 文件 |
-| 新依赖 | 0 |
+| CharacterAgent 子系统 | 27（构造函数直接实例化） |
+| 测试文件 | 1 个（json-parser.test.ts，18 用例） |
 | 后端 LLM | DeepSeek V4 Pro (生成) + Flash (心理分析) |
 | 协议 | OpenAI-compatible API |
 | 运行时 | Node.js + tsx |
@@ -352,12 +362,12 @@ config/
                             ▼                     │
               ┌─────────────────────┐              │
               │   GuardPipeline     │ 输入安全检查   │
-              │   Gate 0→1→2→3     │              │
+              │   Gate 0→1b→2      │              │
               └─────────┬───────────┘              │
                         ▼                          │
               ┌─────────────────────┐              │
-              │  PsychologyEngine   │ 情感分析      │
-              │  情感·依恋·防御·动机 │              │
+              │ detectEmotionHeur.  │ 规则情感检测   │
+              │ + modulateFast      │ + 上轮冷缓存   │
               └─────────┬───────────┘              │
                         ▼                          │
               ┌─────────────────────┐              │
@@ -381,13 +391,21 @@ config/
               └─────────┬───────────┘              │
                         ▼                          │
               ┌─────────────────────┐              │
-              │  Cold Path          │              │
-              │  记忆写入·状态持久化 │              │
-              │  CheckpointManager  │              │
+              │  Cold Path (异步)   │ 🔥 fire-and-  │
+              │  L0→L1→L2→L3 级联   │   forget      │
+              │  记忆写入·状态更新   │              │
               └─────────┬───────────┘              │
                         ▼                          │
+              ┌─────────────────────┐              │
+              │  coldCache          │ 下一轮热路径  │
+              │  跨轮传递           │ 消费此缓存    │
+              └─────────────────────┘              │
+                        │                          │
                    用户看到回复 ─────────────────────┘
 ```
+
+> **关键**：当轮不再调用 PsychologyEngine——情感分析延迟到生成之后的异步冷路径，
+> 结果影响的是**下一轮**生成，消除"表演性即时情绪"。
 
 ---
 
@@ -419,3 +437,40 @@ npm run eval:personality        # 仅人格测试
 | `/dream` | 触发记忆巩固 |
 | `/think 问题` | 深度推理 |
 | `/quit` | 退出 |
+
+---
+
+## 安全
+
+本项目已修复以下 P0 级安全漏洞（2026-06-22）：
+
+| 漏洞 | 文件 | 修复方式 |
+|------|------|---------|
+| `!command` bash 模式绕过所有护栏 | `src/main.ts` | 删除该代码块 + 移除 execSync 导入 |
+| `search_content` 命令注入（shell 拼接） | `src/tools/builtin/search-content.ts` | 改用 `execFileSync("rg", args)` 数组形式 |
+| SSRF 黑名单残缺 + 无 DNS rebinding 防御 | `src/tools/builtin/web-fetch.ts` | 完整私网段 + IPv6 + DNS 解析后校验 |
+
+护栏体系详见上文"五、guard/"，威胁模型与已知限制详见 [SECURITY.md](./SECURITY.md)。
+
+---
+
+## 测试现状
+
+当前测试覆盖**严重不足**，是项目最大的已知技术债：
+
+- 测试文件：1 个（`src/mind/json-parser.test.ts`，18 用例）
+- 覆盖率：< 2%
+- **完全未测试的关键模块**：`agent.ts`（核心编排）、`memory/*.ts`（持久化）、`guard/*.ts`（安全护栏⚠️）、`tools/builtin/*.ts`、`saturation.ts`
+
+建议优先补测试的方向：安全护栏对抗样本、工具边界条件、饱和度 lerp 边界、checkpoint 保存/加载循环。
+
+---
+
+## 相关文档
+
+| 文档 | 内容 |
+|------|------|
+| [README.md](./README.md) | 项目门面、快速开始、命令速查 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 架构决策记录（ADR-001 ~ ADR-010）|
+| [SECURITY.md](./SECURITY.md) | 安全策略、已修复漏洞、已知限制 |
+| [CHANGELOG.md](./CHANGELOG.md) | 版本变更记录 |

@@ -1,8 +1,9 @@
-// Route: TTY → Ink UI, non-TTY → readline fallback
+// Character Mind v3 — Ink TUI only.
+// Readline fallback has been removed. Non-TTY environments get a clear error.
 if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-  // Ink TUI (PowerShell / Windows Terminal / real TTY)
   import("./ink-main");
 } else {
-  // Readline fallback (pipes, Git Bash, non-TTY)
-  import("./main").then(m => m.main()).catch((err: any) => { console.error("Fatal:", err); process.exit(1); });
+  console.error("Character Mind v3 requires a real terminal (TTY).");
+  console.error("Use PowerShell, Windows Terminal, or any terminal emulator.");
+  process.exit(1);
 }

@@ -137,24 +137,6 @@ export class SkillLibrary {
     return { archived, warnings };
   }
 
-  /** Detect similar skills that could be merged. */
-  detectMergeCandidates(): string[][] {
-    const active = this.listActive();
-    const candidates: string[][] = [];
-
-    for (let i = 0; i < active.length; i++) {
-      for (let j = i + 1; j < active.length; j++) {
-        const a = active[i], b = active[j];
-        // Check trigger overlap
-        const overlap = a.triggers.filter(t => b.triggers.includes(t));
-        if (overlap.length >= 2) {
-          candidates.push([a.name, b.name]);
-        }
-      }
-    }
-    return candidates;
-  }
-
   get(name: string): Skill | undefined { return this._skills.get(name); }
   listActive(): Skill[] { return [...this._skills.values()].filter(s => !s.archived); }
   archive(name: string): void { const s = this._skills.get(name); if (s) s.archived = true; }

@@ -35,11 +35,6 @@ export class FeedbackLoop {
     return e;
   }
 
-  recordAutoQuality(qs: number, ctx: string): void {
-    if (qs >= 0.7) this.recordExplicit(FeedbackLevel.GENTLE, ctx, `质量${qs.toFixed(2)}`);
-    else if (qs < 0.3) this.recordExplicit(FeedbackLevel.NORMAL, ctx, `低质量${qs.toFixed(2)}`);
-  }
-
   private _check(e: FeedbackEvent): void {
     if (e.level === FeedbackLevel.GENTLE) return;
     const p = e.context.slice(0, 80).toLowerCase();
