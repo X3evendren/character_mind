@@ -13,7 +13,9 @@ function SectionTitle({ title }: { title: string }) {
   return React.createElement(Text, { color: c.primary, bold: true }, `▎${title}`);
 }
 
-export function OuterColumn() {
+export function OuterColumn({ scrollY = 0 }: { scrollY?: number } = {}) {
+  // scrollY 为 Dashboard Ctrl+J/K 滚动预留位，当前未实际参与渲染。
+  void scrollY;
   const snap = useAgentStore((s) => s.snapshot);
   const c = useThemeStore((s) => s.theme).colors;
 
