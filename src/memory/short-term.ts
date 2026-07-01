@@ -1,5 +1,5 @@
-/** Short-Term Memory — SQLite + FTS5. better-sqlite3 for Node.js */
-import Database from "better-sqlite3";
+/** Short-Term Memory — SQLite + FTS5. sql.js adapter. */
+import { SqliteAdapter } from "./sqlite-adapter";
 import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse, type MemoryType } from "./store";
 
 export class ShortTermMemory extends MemoryStore {
@@ -141,13 +141,13 @@ export class ShortTermMemory extends MemoryStore {
       await ltmStore.store(upgraded);
       promoted.push(upgraded);
       // Mark original as superseded to prevent double-promotion by promoteCandidates()
-      this._db!.prepare("UPDATE stm SET superseded=1 WHERE record_id=?").run(r.recordId);
+      this._db!.run("UPDATE stm SET superseded=1 WHERE record_id=?", r.recordId);
     }
     return promoted;
   }
 
   promoteCandidates(): MemoryRecord[] {
-    return (this._db!.prepare("SELECT * FROM stm WHERE recall_count >= 3 AND superseded=0").all() as any[]).map((r: any) => this._rowToRecord(r));
+    return (this._db!.all("SELECT * FROM stm WHERE recall_count >= 3 AND superseded=0") as any[]).map((r: any) => this._rowToRecord(r));
   }
 
   private _trim(): void {

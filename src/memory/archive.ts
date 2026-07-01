@@ -1,7 +1,7 @@
 /** Archive Memory — Final resting place for superseded/expired memories.
  *  Timeline-only retrieval. TTL hard deletion is the ONLY deletion path.
  */
-import Database from "better-sqlite3";
+import { SqliteAdapter } from "./sqlite-adapter";
 import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse } from "./store";
 
 export class ArchiveMemory extends MemoryStore {

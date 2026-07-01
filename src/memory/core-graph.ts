@@ -67,7 +67,7 @@ export class CoreGraphMemory extends MemoryStore {
     }
     const now = Date.now() / 1000;
     const decayedEdges = relevantEdges.map(er => ({ from: er.from_id, to: er.to_id, relation: er.relation, weight: Math.max(0.1, er.weight * Math.exp(-(now - er.timestamp) / (this.halfLifeDays * 86400))), source: er.source_event }));
-    const nodeData = [...visited].map(nid => { const nr = this._db!.prepare("SELECT node_id, label, node_type FROM nodes WHERE node_id=?").get(nid) as any; return nr ? { id: nr.node_id, label: nr.label, type: nr.node_type } : null; }).filter(Boolean) as any[];
+    const nodeData = [...visited].map(nid => { const nr = this._db!.get("SELECT node_id, label, node_type FROM nodes WHERE node_id=?", nid) as any; return nr ? { id: nr.node_id, label: nr.label, type: nr.node_type } : null; }).filter(Boolean) as any[];
     const summary = decayedEdges.slice(0, 10).map(e => `${nodeData.find(n => n.id === e.from)?.label ?? e.from}与${nodeData.find(n => n.id === e.to)?.label ?? e.to}: ${e.relation}`).join("; ") || "无显著关系";
     const result = { nodes: nodeData, edges: decayedEdges, summary };
     this._indexCache.set(ck, result);
@@ -92,9 +92,9 @@ export class CoreGraphMemory extends MemoryStore {
   }
 
   private _addEdge(fid: string, tid: string, rel: string, now: number, src: string): void {
-    const ex = this._db!.prepare("SELECT edge_id, weight FROM edges WHERE from_id=? AND to_id=? AND relation=? AND superseded=0").get(fid, tid, rel) as any;
-    if (ex) this._db!.prepare("UPDATE edges SET weight=MIN(1.0,?), timestamp=? WHERE edge_id=?").run(ex.weight + 0.2, now, ex.edge_id);
-    else this._db!.prepare("INSERT INTO edges (from_id,to_id,relation,weight,timestamp,source_event) VALUES (?,?,?,?,?,?)").run(fid, tid, rel, 0.5, now, src);
+    const ex = this._db!.get("SELECT edge_id, weight FROM edges WHERE from_id=? AND to_id=? AND relation=? AND superseded=0", fid, tid, rel) as any;
+    if (ex) this._db!.run("UPDATE edges SET weight=MIN(1.0,?), timestamp=? WHERE edge_id=?", ex.weight + 0.2, now, ex.edge_id);
+    else this._db!.run("INSERT INTO edges (from_id,to_id,relation,weight,timestamp,source_event) VALUES (?,?,?,?,?,?)", fid, tid, rel, 0.5, now, src);
   }
 
   private _inferType(label: string): string {

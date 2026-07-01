@@ -54,7 +54,7 @@ export class OpenAICompatProvider implements IProvider {
       messages: messages as any,
       temperature,
       max_tokens: maxTokens,
-      tools: _tools,
+      tools,
     }, { signal });
     const choice = resp.choices?.[0];
     if (!choice) return { content: "", reasoningContent: "", usage: {}, finishReason: "stop", toolCalls: [] };

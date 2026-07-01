@@ -1,5 +1,5 @@
-/** Long-Term Memory — SQLite + time decay. better-sqlite3 for Node.js */
-import Database from "better-sqlite3";
+/** Long-Term Memory — SQLite + time decay. sql.js adapter. */
+import { SqliteAdapter } from "./sqlite-adapter";
 import { MemoryStore, MemoryRecord, createMemoryRecord, ConsolidationReport, createConsolidationReport, safeJsonParse } from "./store";
 
 export class LongTermMemory extends MemoryStore {
@@ -65,9 +65,10 @@ export class LongTermMemory extends MemoryStore {
   async search(_e?: number[] | null, filters?: Record<string, unknown> | null, n = 5): Promise<MemoryRecord[]> {
     // Support superseded filter (for ArchiveMemory.absorbSuperseded)
     if (filters?.superseded) {
-      const rows = this._db!.prepare(
-        "SELECT * FROM ltm WHERE superseded=1 ORDER BY timestamp DESC LIMIT ?"
-      ).all(n) as any[];
+      const rows = this._db!.all(
+        "SELECT * FROM ltm WHERE superseded=1 ORDER BY timestamp DESC LIMIT ?",
+        n,
+      ) as any[];
       return rows.map((r: any) => this._rowToRecord(r));
     }
     return filters?.query ? this.recall(filters.query as string, n) : this.recall("", n);
