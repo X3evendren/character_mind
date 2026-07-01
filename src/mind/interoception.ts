@@ -247,4 +247,170 @@ export function updateInteroceptivePrecision(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Interoceptive POMDP — Partially Observable Markov Decision Process
+// for cardiac phase + arousal state inference
+//
+// Simplified 2x2 transition matrices track hidden states over time,
+// enabling Bayesian filtering of interoceptive observations.
+// ═══════════════════════════════════════════════════════════════
+
+/** Hidden cardiac phase state: systole (0) or diastole (1). */
+export interface InteroceptiveHiddenState {
+  cardiacPhase: number;   // 0 = systole, 1 = diastole
+  cardiacArousal: number; // 0 = low arousal (parasympathetic), 1 = high (sympathetic)
+}
+
+/** Noisy observation of interoceptive state. */
+export interface InteroceptiveObservation {
+  perceivedPhase: number;      // 0–1, noisy read of cardiacPhase
+  perceivedArousal: number;    // 0–1, noisy read of cardiacArousal
+  confidence: number;          // 0–1, observation reliability
+}
+
+/** Policy: action the agent can take to modulate interoception. */
+export interface InteroceptivePolicy {
+  label: string;
+  targetCardiacPhase?: number;   // preferred phase after action
+  targetArousal?: number;        // preferred arousal after action
+  precision: number;             // 0–1, confidence in this policy
+}
+
+/**
+ * Cardiac phase transition matrix (2x2).
+ *
+ *   P(systole → systole)     P(systole → diastole)
+ *   P(diastole → systole)    P(diastole → diastole)
+ *
+ * At rest: diastole is longer (~0.6 of cycle).
+ * Under arousal: systole fraction increases (shorter diastole).
+ */
+export function cardiacPhaseTransition(arousal: number): [[number, number], [number, number]] {
+  // Higher arousal → more likely to stay in / transition to systole
+  const pSystoleStay = 0.35 + arousal * 0.15;
+  const pDiastoleStay = 0.65 - arousal * 0.15;
+  return [
+    [pSystoleStay, 1 - pSystoleStay],
+    [1 - pDiastoleStay, pDiastoleStay],
+  ];
+}
+
+/**
+ * Cardiac arousal transition matrix (2x2).
+ *
+ * Autonomic arousal has inertia — it doesn't flip instantly.
+ */
+export function cardiacArousalTransition(allostaticLoad: number): [[number, number], [number, number]] {
+  // High allostatic load → arousal tends to stay high
+  const pLowStay = 0.7 - allostaticLoad * 0.2;
+  const pHighStay = 0.3 + allostaticLoad * 0.3;
+  return [
+    [pLowStay, 1 - pLowStay],
+    [1 - pHighStay, pHighStay],
+  ];
+}
+
+/**
+ * Observation likelihood: P(observation | hidden state).
+ *
+ * Higher precision → observation better reflects true state.
+ */
+export function observationLikelihood(
+  observation: InteroceptiveObservation,
+  hidden: InteroceptiveHiddenState,
+  precision: number,
+): number {
+  // Phase agreement: how close is perceivedPhase to hidden cardiacPhase?
+  const phaseError = Math.abs(observation.perceivedPhase - hidden.cardiacPhase);
+  const phaseLikelihood = Math.exp(-phaseError / (0.1 + (1 - precision) * 0.3));
+
+  // Arousal agreement
+  const arousalError = Math.abs(observation.perceivedArousal - hidden.cardiacArousal);
+  const arousalLikelihood = Math.exp(-arousalError / (0.1 + (1 - precision) * 0.3));
+
+  // Combined likelihood (product of independent channels)
+  return phaseLikelihood * arousalLikelihood * observation.confidence;
+}
+
+/**
+ * Interoceptive precision parameters — control the gain on observations.
+ */
+export interface InteroceptivePrecisionParams {
+  cardiacPhasePrecision: number;   // 0–1, precision on phase channel
+  cardiacArousalPrecision: number; // 0–1, precision on arousal channel
+}
+
+/** Default precision parameters. */
+export const DEFAULT_POMDP_PRECISION: InteroceptivePrecisionParams = {
+  cardiacPhasePrecision: 0.6,
+  cardiacArousalPrecision: 0.5,
+};
+
+/**
+ * Simplified Bayesian belief update for interoceptive POMDP.
+ *
+ * Given a prior belief over hidden states (4 discrete states for the 2×2
+ * phase × arousal grid) and a new observation, compute the posterior belief.
+ *
+ * This is a filtered belief state, not full POMDP planning — sufficient
+ * for interoceptive inference without computational overhead.
+ */
+export function updateInteroceptiveBelief(
+  priorBelief: number[],  // length 4: [sys+low, sys+high, dia+low, dia+high]
+  observation: InteroceptiveObservation,
+  allostaticLoad: number,
+  precision: InteroceptivePrecisionParams,
+): number[] {
+  const phaseT = cardiacPhaseTransition(allostaticLoad);
+  const arousalT = cardiacArousalTransition(allostaticLoad);
+
+  // Hidden states: [systole+low, systole+high, diastole+low, diastole+high]
+  const hiddenStates: InteroceptiveHiddenState[] = [
+    { cardiacPhase: 0, cardiacArousal: 0 },
+    { cardiacPhase: 0, cardiacArousal: 1 },
+    { cardiacPhase: 1, cardiacArousal: 0 },
+    { cardiacPhase: 1, cardiacArousal: 1 },
+  ];
+
+  // Prediction step: prior × transition
+  const predicted: number[] = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    const fromPhase = hiddenStates[i].cardiacPhase;
+    const fromArousal = hiddenStates[i].cardiacArousal;
+    for (let j = 0; j < 4; j++) {
+      const toPhase = hiddenStates[j].cardiacPhase;
+      const toArousal = hiddenStates[j].cardiacArousal;
+      const transProb = phaseT[fromPhase][toPhase] * arousalT[fromArousal][toArousal];
+      predicted[j] += priorBelief[i] * transProb;
+    }
+  }
+
+  // Update step: predicted × observation likelihood
+  const jointPrecision =
+    (precision.cardiacPhasePrecision + precision.cardiacArousalPrecision) / 2;
+  const posterior: number[] = [0, 0, 0, 0];
+  let evidence = 0;
+  for (let i = 0; i < 4; i++) {
+    posterior[i] = predicted[i] * observationLikelihood(observation, hiddenStates[i], jointPrecision);
+    evidence += posterior[i];
+  }
+
+  // Normalize
+  if (evidence > 0) {
+    for (let i = 0; i < 4; i++) posterior[i] /= evidence;
+  } else {
+    // If no evidence, keep prior
+    for (let i = 0; i < 4; i++) posterior[i] = priorBelief[i];
+  }
+
+  return posterior;
+}
+
+/**
+ * Initialize a uniform belief over the 4 hidden states.
+ */
+export function initInteroceptiveBelief(): number[] {
+  return [0.25, 0.25, 0.25, 0.25];
+}
+
 // Helpers: gaussianRandom imported from ./force-field

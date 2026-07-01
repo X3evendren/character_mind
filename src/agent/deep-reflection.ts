@@ -396,6 +396,7 @@ function createEmptyContext(): ReflectionContext {
       euthymic: 0.5, irritable: 0.3, anxious: 0.3, vital: 0.5,
       warm: 0.5, confident: 0.5, grateful: 0.5, proud: 0.4,
       curious: 0.5, hopeful: 0.5, awed: 0.4, playful: 0.5,
+      paniGrief: 0.1, fatigue: 0,
     },
     currentPAD: { pleasure: 0, arousal: 0, dominance: 0 },
     currentSelfView: "",

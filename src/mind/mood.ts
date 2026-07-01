@@ -26,6 +26,166 @@ import type { TDErrorResult } from "./td-error";
 /** Per-round emotion signal window for mood integration */
 export const MOOD_INTEGRATION_WINDOW = 3;
 
+// ═══════════════════════════════════════════════════════════════
+// Panksepp Primary Affective Systems (7 subcortical circuits)
+// ═══════════════════════════════════════════════════════════════
+
+export interface PankseppPrimarySystem {
+  name: string;
+  activation: number;       // 0–1 current activation
+  threshold: number;        // activation threshold for output
+  riseTime: number;         // how fast it ramps up (0–1)
+  decayRate: number;        // leak rate per tick (0–1)
+  neuroModulation: Record<string, number>; // cross-system modulation weights
+}
+
+export const PANIKSEPP_SYSTEMS: ReadonlyArray<Omit<PankseppPrimarySystem, "activation" | "neuroModulation"> & { defaultActivation: number; modulations: Record<string, number> }> = [
+  {
+    name: "SEEKING",
+    defaultActivation: 0.5,
+    threshold: 0.3,
+    riseTime: 0.15,
+    decayRate: 0.05,
+    modulations: { PLAY: 0.2, FEAR: -0.15, PANIC_GRIEF: -0.1 },
+  },
+  {
+    name: "RAGE",
+    defaultActivation: 0.15,
+    threshold: 0.4,
+    riseTime: 0.25,
+    decayRate: 0.15,
+    modulations: { SEEKING: -0.2, CARE: -0.3, PLAY: -0.25, FEAR: -0.1 },
+  },
+  {
+    name: "FEAR",
+    defaultActivation: 0.15,
+    threshold: 0.35,
+    riseTime: 0.3,
+    decayRate: 0.1,
+    modulations: { SEEKING: -0.3, PLAY: -0.3, LUST: -0.2, CARE: 0.05 },
+  },
+  {
+    name: "LUST",
+    defaultActivation: 0.1,
+    threshold: 0.4,
+    riseTime: 0.2,
+    decayRate: 0.08,
+    modulations: { PLAY: 0.15, SEEKING: 0.1, PANIC_GRIEF: -0.2 },
+  },
+  {
+    name: "CARE",
+    defaultActivation: 0.3,
+    threshold: 0.2,
+    riseTime: 0.1,
+    decayRate: 0.03,
+    modulations: { PANIC_GRIEF: -0.4, PLAY: 0.2, SEEKING: 0.1, RAGE: -0.3, FEAR: 0.05 },
+  },
+  {
+    name: "PANIC_GRIEF",
+    defaultActivation: 0.1,
+    threshold: 0.3,
+    riseTime: 0.25,
+    decayRate: 0.12,
+    modulations: { SEEKING: -0.25, PLAY: -0.3, CARE: 0.3, FEAR: 0.15, LUST: -0.1 },
+  },
+  {
+    name: "PLAY",
+    defaultActivation: 0.2,
+    threshold: 0.2,
+    riseTime: 0.12,
+    decayRate: 0.06,
+    modulations: { SEEKING: 0.15, FEAR: -0.3, RAGE: -0.25, CARE: 0.1, PANIC_GRIEF: -0.2 },
+  },
+];
+
+/** Initialize the 7 primary systems to default activations. */
+export function initPrimarySystems(): Record<string, PankseppPrimarySystem> {
+  const systems: Record<string, PankseppPrimarySystem> = {};
+  for (const def of PANIKSEPP_SYSTEMS) {
+    systems[def.name] = {
+      name: def.name,
+      activation: def.defaultActivation,
+      threshold: def.threshold,
+      riseTime: def.riseTime,
+      decayRate: def.decayRate,
+      neuroModulation: { ...def.modulations },
+    };
+  }
+  return systems;
+}
+
+/**
+ * Update the 7 Panksepp primary-process affective systems from
+ * CPM/PAD appraisal, TD errors, and current mood state.
+ *
+ * Each system integrates bottom-up emotional signals with
+ * top-down mood biasing and cross-system neuromodulation.
+ */
+export function updatePrimarySystems(
+  systems: Record<string, PankseppPrimarySystem>,
+  pad: PAD,
+  td: TDErrorResult,
+  mood: MoodSnapshot,
+): void {
+  // ── Compute raw drive signals from PAD + TD ──
+
+  // SEEKING: appetitive motivation — pleasure + positive TD
+  const seekingDrive = Math.max(0, pad.pleasure * 0.3 + Math.max(0, td.total) * 0.25 + mood.curious * 0.15);
+
+  // RAGE: frustration — high arousal + negative TD + irritation
+  const rageDrive = Math.max(0, pad.arousal * 0.25 + Math.max(0, -td.total) * 0.2 + mood.irritable * 0.2);
+
+  // FEAR: threat detection — low safety + high arousal + negative TD + anxiety
+  const fearDrive = Math.max(0, (1 - pad.pleasure) * 0.2 + pad.arousal * 0.2 + Math.max(0, -td.total) * 0.15 + mood.anxious * 0.25);
+
+  // LUST: mild appetitive + low dominance (receptivity) + playful mood
+  const lustDrive = Math.max(0, pad.pleasure * 0.15 + (1 - pad.dominance) * 0.1 + mood.playful * 0.1);
+
+  // CARE: prosocial — positive pleasure + connection-driven + warm mood
+  const careDrive = Math.max(0, pad.pleasure * 0.2 + mood.warm * 0.2 + mood.grateful * 0.1);
+
+  // PANIC_GRIEF: separation distress — low pleasure + low dominance + pained mood
+  const panicDrive = Math.max(0, (1 - pad.pleasure) * 0.25 + (1 - pad.dominance) * 0.15 + mood.anxious * 0.1);
+
+  // PLAY: social joy — safety + positive arousal + playful mood
+  const playDrive = Math.max(0, pad.pleasure * 0.2 + Math.max(0, pad.arousal - 0.3) * 0.15 + mood.playful * 0.2);
+
+  const driveSignals: Record<string, number> = {
+    SEEKING: seekingDrive,
+    RAGE: rageDrive,
+    FEAR: fearDrive,
+    LUST: lustDrive,
+    CARE: careDrive,
+    PANIC_GRIEF: panicDrive,
+    PLAY: playDrive,
+  };
+
+  // ── Apply rise/decay dynamics + cross-system modulation ──
+  for (const [name, system] of Object.entries(systems)) {
+    const drive = driveSignals[name] ?? 0;
+
+    // Rise toward drive signal (bounded)
+    const rise = Math.min(drive, system.riseTime * (1 - system.activation));
+
+    // Decay toward baseline
+    const baselineDef = PANIKSEPP_SYSTEMS.find(s => s.name === name);
+    const baseline = baselineDef?.defaultActivation ?? 0.2;
+    const decay = system.decayRate * (system.activation - baseline);
+
+    // Cross-system neuromodulation
+    let crossMod = 0;
+    for (const [otherName, modWeight] of Object.entries(system.neuroModulation)) {
+      const other = systems[otherName];
+      if (other) {
+        crossMod += other.activation * modWeight * 0.1;
+      }
+    }
+
+    // Update activation
+    system.activation = Math.max(0.01, Math.min(1, system.activation + rise - decay + crossMod));
+  }
+}
+
 export interface MoodSnapshot {
   euthymic: number;
   irritable: number;
@@ -39,6 +199,10 @@ export interface MoodSnapshot {
   hopeful: number;
   awed: number;
   playful: number;
+  /** Panksepp PANIC/GRIEF composite (0–1) */
+  paniGrief: number;
+  /** Cumulative regulation fatigue (0–1) */
+  fatigue: number;
 }
 
 export const MOOD_DIMENSIONS = [
@@ -180,6 +344,8 @@ export function snapshotMoods(fields: Record<string, ForceField>): MoodSnapshot 
     hopeful:   fields.moodHopeful?.value   ?? 0.5,
     awed:      fields.moodAwed?.value      ?? 0.4,
     playful:   fields.moodPlayful?.value   ?? 0.5,
+    paniGrief: fields.moodPaniGrief?.value ?? 0.1,
+    fatigue:   fields.moodFatigue?.value   ?? 0,
   };
 }
 

@@ -93,6 +93,40 @@ export interface TurnContext {
   elapsedMs: number;
 }
 
+/**
+ * ReflectionGate — on-demand arbitration for cold-path analysis.
+ *
+ * Cold analysis is expensive (4 LLM passes). The gate prevents
+ * unnecessary cold-path execution when the agent's state is stable.
+ *
+ * Returns true when cold analysis is warranted:
+ *   - TD error magnitude exceeds threshold (surprise / prediction failure)
+ *   - Allostatic load exceeds threshold (chronic stress demands reflection)
+ *   - PAD indicates strong negative affect (emotional dysregulation)
+ */
+function shouldTriggerColdPath(
+  _input: string,
+  _response: string,
+  td: TDErrorResult,
+  allostaticLoad: number,
+  currentPAD: PAD | null,
+): boolean {
+  // TD error: significant prediction error demands deeper analysis
+  if (Math.abs(td.total) > 0.3) return true;
+
+  // Allostatic load: chronic stress accumulation requires reflection
+  if (allostaticLoad > 0.5) return true;
+
+  // PAD: strong negative affect — the agent is emotionally dysregulated
+  if (currentPAD) {
+    if (currentPAD.pleasure < -0.3) return true;
+    if (currentPAD.arousal > 0.7) return true;
+    if (currentPAD.dominance < -0.3) return true;
+  }
+
+  return false;
+}
+
 export class CharacterAgent {
   // ── v4 emergent systems ──
   homeostatic: HomeostaticState;
@@ -111,6 +145,7 @@ export class CharacterAgent {
     euthymic: 0.5, irritable: 0.3, anxious: 0.3, vital: 0.5,
     warm: 0.5, confident: 0.5, grateful: 0.5, proud: 0.4,
     curious: 0.5, hopeful: 0.5, awed: 0.4, playful: 0.5,
+    paniGrief: 0.1, fatigue: 0,
   };
   interoState: InteroceptiveState | null = null;
   regulationProfile: RegulationProfile = {
@@ -426,8 +461,16 @@ export class CharacterAgent {
 
     for (const h of this.hooks) { await h.afterGenerate?.(ctx); }
 
-    // Schedule cold analysis — fire-and-forget, does NOT block this turn
-    this.scheduleColdAnalysis(input, ctx.response, taskMode);
+    // Schedule cold analysis — only when ReflectionGate permits
+    const shouldCold = shouldTriggerColdPath(
+      input, ctx.response,
+      { total: 0, energy: 0, arousal: 0, safety: 0, connection: 0, mastery: 0, dominant: "safety" as const },
+      this.homeostatic.allostaticLoad,
+      this.currentPAD,
+    );
+    if (shouldCold) {
+      this.scheduleColdAnalysis(input, ctx.response, taskMode);
+    }
 
     // State updates that don't need LLM (keep these synchronous)
     this.saturation.positiveInteraction(emoIntensity);
@@ -777,8 +820,15 @@ export class CharacterAgent {
     );
     yield { type: "phase_end", phase: "update_instant", ts: phaseStart, durationMs: Date.now() - phaseStart };
 
-    // Phase 8: cold_analyze (fire-and-forget — 3-layer fusion)
-    this.scheduleColdAnalysis(input, responseText, taskMode);
+    // Phase 8: cold_analyze (fire-and-forget — 3-layer fusion, gated)
+    const shouldCold2 = shouldTriggerColdPath(
+      input, responseText, td,
+      this.homeostatic.allostaticLoad,
+      this.currentPAD,
+    );
+    if (shouldCold2) {
+      this.scheduleColdAnalysis(input, responseText, taskMode);
+    }
     yield { type: "phase_end", phase: "cold_analyze", ts: phaseStart, durationMs: 0 };
 
     // Phase 9: checkpoint
