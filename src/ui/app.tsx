@@ -3,15 +3,14 @@ import React, { useState, useEffect, useRef } from "react";
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { CharacterAgent } from "../agent/agent";
 import { OpenAICompatProvider } from "../agent/provider";
+import { AnthropicProvider } from "../agent/provider-anthropic";
+import type { TurnEvent, RunResult } from "../agent/events";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { registerBuiltinCommands, router, isCommandInput } from "../commands/index";
 import { HistoryStore } from "./history";
 import { SpanState } from "./span-renderer";
-import { GenerationController } from "../generation/controller";
-import { InflightSummarizer } from "../generation/inflight-summarizer";
-import { SpanBasedGenerator } from "../agent/dual-track";
-import type { Span, SpanOp, ToolResult } from "../generation/types";
+import type { Span } from "../generation/types";
 import { Tracer, JsonlExporter, ConsoleExporter, CompositeExporter } from "../telemetry";
 import { CheckpointManager, RecoveryManager } from "../recovery";
 import { ContinuousLoop } from "../agent/loop";
@@ -36,7 +35,6 @@ export function App() {
 
   // Span-based rendering
   const spanState = useRef(new SpanState()).current;
-  const controllerRef = useRef<GenerationController | null>(null);
   const [, forceRender] = useState(0);
 
   // Subscribe SpanState to React re-renders
@@ -52,8 +50,11 @@ export function App() {
     initRef.current = true;
     (async () => {
       try {
-        const gen = new OpenAICompatProvider("deepseek-v4-pro", API_KEY, API_BASE);
-        const psych = new OpenAICompatProvider("deepseek-v4-flash", API_KEY, API_BASE);
+        const model = process.env.GEN_MODEL || "LongCat-2.0";
+        const isAnthropic = API_BASE.includes("anthropic") || API_BASE.includes("longcat");
+        const provider = isAnthropic
+          ? new AnthropicProvider(model, API_KEY, API_BASE)
+          : new OpenAICompatProvider(model, API_KEY, API_BASE);
         const tracer = new Tracer(new CompositeExporter(
           new JsonlExporter(),
           new ConsoleExporter(),
@@ -62,8 +63,11 @@ export function App() {
         const recovery = new RecoveryManager(ckpt);
         const decision = recovery.detect();
         const a = new CharacterAgent({
-          configDir: CONFIG_DIR, genProvider: gen, psychProvider: psych,
-          genModel: "deepseek-v4-pro", psychModel: "deepseek-v4-flash",
+          configDir: CONFIG_DIR,
+          genProvider: provider,
+          psychProvider: provider,  // unified — single model
+          genModel: model,
+          psychModel: model,
           tracer,
           checkpointManager: ckpt,
         });
@@ -82,15 +86,6 @@ export function App() {
         const loop = new ContinuousLoop(30_000);
         loop.start(a);
 
-        // Build controller
-        const inflightSummarizer = new InflightSummarizer(psych);
-        const spanGenerator = new SpanBasedGenerator(gen, gen, a.toolRegistry, tracer);
-
-        const controllerAdapter = createControllerAdapter(a, spanState);
-        const controller = new GenerationController(spanState, inflightSummarizer, controllerAdapter);
-        controller.setGenerator(spanGenerator);
-        controllerRef.current = controller;
-
         setStatus("");
         setGenStatus("idle");
       } catch (e: any) { setStatus(`Error: ${e.message}`); }
@@ -105,12 +100,7 @@ export function App() {
 
     if (text === "/quit") { agent.shutdown().then(() => exit()); return; }
     if (text === "/stats") {
-      const s = agent.params.snapshot();
-      const top = Object.entries(s as Record<string, number>)
-        .filter(([, v]) => Math.abs(v) > 0.1).slice(0, 6)
-        .map(([k, v]) => `${k}:${v > 0 ? "+" : ""}${v}`).join(", ");
-      // Add as locked span for display
-      const statsSpan: Span = { id: `stats_${Date.now()}`, layer: "locked", text: `s=${agent.saturation.s.toFixed(3)} ${top}`, startPos: 0, endPos: 0, committedAt: Date.now() };
+      const statsSpan: Span = { id: `stats_${Date.now()}`, layer: "locked", text: `s=${agent.saturation.s.toFixed(3)}`, startPos: 0, endPos: 0, committedAt: Date.now() };
       spanState.apply({ type: "append", span: statsSpan });
       return;
     }
@@ -127,23 +117,55 @@ export function App() {
     // Add user input as locked span
     const userSpan: Span = { id: `usr_${Date.now()}`, layer: "locked", text: `❯ ${text}`, startPos: 0, endPos: 0, committedAt: Date.now() };
     spanState.apply({ type: "append", span: userSpan });
-    // Mark generation boundary so abort can roll back correctly
     spanState.markGenStart();
 
     setGenStatus("generating");
     const t0 = Date.now();
 
     try {
-      if (controllerRef.current) {
-        await controllerRef.current.handleTurn(text);
+      // Use the new event-stream API
+      const stream = agent.runStream(text);
+      let lastPhase = "";
+      for await (const event of stream) {
+        switch (event.type) {
+          case "phase_start":
+            lastPhase = event.phase;
+            setStatus(`${event.phase}...`);
+            break;
+          case "text_delta": {
+            // Append as fluid span — spanState manages sentence-level locking
+            const fluidSpan: Span = { id: `txt_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, layer: "fluid", text: event.text, startPos: 0, endPos: 0, committedAt: Date.now() };
+            spanState.apply({ type: "append", span: fluidSpan });
+            break;
+          }
+          case "tool_start":
+            setStatus(`执行工具: ${event.tool}...`);
+            break;
+          case "tool_end":
+            setStatus(`工具 ${event.tool} ${event.success ? "完成" : "失败"}`);
+            break;
+          case "cold_layer_start":
+            setStatus(`冷分析: ${event.name}...`);
+            break;
+          case "error":
+            setStatus(`错误: ${event.message}`);
+            break;
+          case "done": {
+            // Lock all fluid spans
+            for (const span of spanState.getFluidSpans()) {
+              spanState.apply({ type: "lock", spanId: span.id });
+            }
+            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            setGenStatus("idle");
+            setStatus(`${agentName} · s=${agent.saturation.s.toFixed(2)} · ${elapsed}s · t${agent.turnCount}`);
+            break;
+          }
+        }
       }
-    } catch {
-      setStatus("Error");
+    } catch (err: any) {
+      setStatus(`Error: ${err?.message ?? "unknown"}`);
+      setGenStatus("idle");
     }
-
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    setGenStatus("idle");
-    setStatus(`${agentName} · s=${agent.saturation.s.toFixed(2)} · ${elapsed}s · t${agent.turnCount}`);
   };
 
   // ═══════════════════════════════════════
@@ -233,44 +255,3 @@ export function App() {
   );
 }
 
-// ═══════════════════════════════════════
-// ControllerAgent adapter (wraps CharacterAgent until Phase 6 refactor)
-// ═══════════════════════════════════════
-
-function createControllerAdapter(agent: CharacterAgent, spanState: SpanState) {
-  return {
-    getCommittedSpans(): Span[] {
-      return spanState.getAllSpans();
-    },
-    snapshot: {
-      formatForPrompt() { return agent.snapshot.formatForPrompt(); },
-      freeze() { return agent.snapshot.freeze({}); },
-      markDirty() { agent.snapshot.markDirty(); },
-    },
-    psychologyEngine: agent.psychologyEngine,
-    selfModel: agent.selfModel,
-    temporalHorizon: agent.temporalHorizon,
-    affectiveResidue: agent.affectiveResidue,
-    driveSublimator: agent.driveSublimator,
-    drives: agent.drives,
-    groundTruth: agent.groundTruth,
-    config: {
-      name: agent.config.name,
-      traits: agent.config.traits,
-      essence: agent.config.essence as string | undefined,
-      rules: agent.config.rules as string | undefined,
-    },
-    get genParams() {
-      return {
-        temperature: agent.continuousParams.responseTemperature,
-        maxTokens: Math.round(agent.continuousParams.verbosity * 500),
-      };
-    },
-    async runColdPath(turnCtx: any) {
-      return agent.runColdPath({ input: turnCtx.input, response: turnCtx.response ?? "" });
-    },
-    consumeStaleSlow(results: any[]) {
-      agent.consumeStaleSlow(results);
-    },
-  };
-}

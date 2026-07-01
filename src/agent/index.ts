@@ -10,3 +10,7 @@ export type { AssistantConfig, MemoryConfig, ToolDefinition } from "./config-loa
 export { PROVIDERS, detectProvider, resolveProvider } from "./provider-registry";
 export type { ProviderSpec, ResolvedProvider } from "./provider-registry";
 export { ContinuousLoop } from "./loop";
+
+// v4 event protocol
+export type { TurnEvent, RunOptions, RunResult, TurnPhase } from "./events";
+export { COLD_LAYER_NAMES } from "./events";

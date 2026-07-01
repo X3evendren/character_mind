@@ -108,6 +108,24 @@ export class CoreGraphMemory extends MemoryStore {
     return this.recall((filters?.query as string) ?? "", n);
   }
 
+  /** Return all active node labels for remote-link / insight computation. */
+  listAllNodeLabels(): string[] {
+    if (!this._db) return [];
+    const rows = this._db.prepare(
+      "SELECT label FROM nodes WHERE superseded=0 ORDER BY updated_at DESC",
+    ).all() as Array<{ label: string }>;
+    return rows.map(r => r.label);
+  }
+
+  /** Decay all active edge weights by a multiplicative factor (0 < factor <= 1). */
+  decayEdgeWeights(factor: number): number {
+    if (!this._db) return 0;
+    const result = this._db.prepare(
+      "UPDATE edges SET weight = MAX(0.01, weight * ?) WHERE superseded=0",
+    ).run(factor);
+    return result.changes;
+  }
+
   async consolidate(): Promise<ConsolidationReport> { return createConsolidationReport(); }
 
   async forget(): Promise<number> {

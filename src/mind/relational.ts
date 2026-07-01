@@ -23,6 +23,14 @@ export class SaturationDetector {
   saturationLevel: number;
   lastModeChange: number;
 
+  // ── Expanded relationship state dimensions (P1.7) ──
+  /** Learned user response pattern — higher = agent learns to avoid certain topics */
+  avoidance: number;
+  /** User response consistency — higher = user behavior is inconsistent/contradictory */
+  ambivalence: number;
+  /** How actively the agent seeks new information about the user (exploration rate) */
+  epistemicForagingRate: number;
+
   constructor(counterparty: string = '') {
     this.counterparty = counterparty;
     this.convergenceWindow = 10;
@@ -33,6 +41,10 @@ export class SaturationDetector {
     this.mode = RelationMode.ENCODE;
     this.saturationLevel = 0;
     this.lastModeChange = 0;
+    // Expanded dimensions (P1.7)
+    this.avoidance = 0;
+    this.ambivalence = 0;
+    this.epistemicForagingRate = 0.5;
   }
 
   observe(predictionError: number, selfModelShift: number): void {
@@ -125,6 +137,9 @@ export class SaturationDetector {
       meanShift: recentShifts.length > 0
         ? Math.round(recentShifts.reduce((a, b) => a + b, 0) / recentShifts.length * 1000) / 1000
         : 0,
+      avoidance: Math.round(this.avoidance * 1000) / 1000,
+      ambivalence: Math.round(this.ambivalence * 1000) / 1000,
+      epistemicForagingRate: Math.round(this.epistemicForagingRate * 1000) / 1000,
     };
   }
 }

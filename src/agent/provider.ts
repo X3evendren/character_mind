@@ -3,6 +3,7 @@
  * Ported from core/provider.py
  */
 import OpenAI from "openai";
+import { tryParseJson } from "../utils";
 
 export interface ToolCall {
   id: string;
@@ -18,7 +19,14 @@ export interface LLMResponse {
   toolCalls: ToolCall[];
 }
 
-export class OpenAICompatProvider {
+/** Abstract provider interface — any OpenAI-compatible backend can implement this. */
+export interface IProvider {
+  model: string;
+  chat(messages: Array<{ role: string; content: string }>, temperature?: number, maxTokens?: number, tools?: any, modelOverride?: string, signal?: AbortSignal): Promise<LLMResponse>;
+  chatStream(messages: Array<{ role: string; content: string }>, temperature?: number, maxTokens?: number, tools?: any, onDelta?: (text: string) => Promise<void>, modelOverride?: string, signal?: AbortSignal): Promise<LLMResponse>;
+}
+
+export class OpenAICompatProvider implements IProvider {
   public model: string;
   public client: OpenAI;
 
@@ -118,8 +126,4 @@ export class OpenAICompatProvider {
 
     return { content, reasoningContent, usage, finishReason, toolCalls };
   }
-}
-
-function tryParseJson(s: string): Record<string, unknown> {
-  try { return JSON.parse(s); } catch { return {}; }
 }

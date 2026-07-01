@@ -48,14 +48,3 @@ export class ResultStorage {
     }
   }
 }
-
-/** Micro-compaction: truncate old large tool results to save token budget.
- *  Keep last 10 results full, older ones cut to 200 chars. */
-export function microCompact(results: Array<{ id: string; output: string }>): Array<{ id: string; output: string }> {
-  const threshold = 500;
-  return results.map((r, i) => {
-    if (i < results.length - 10) return r; // keep recent 10
-    if (r.output.length <= threshold) return r;
-    return { id: r.id, output: `[omitted: ${r.output.length} chars from earlier tool result]` };
-  });
-}

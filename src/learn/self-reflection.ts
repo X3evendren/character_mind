@@ -35,43 +35,6 @@ export class SelfReflection {
   shouldSlowReflect(turnCount: number): boolean { return turnCount % this.slowInterval === 0 && turnCount > 0; }
   shouldSessionReflect(): boolean { return this._turnBuf.length > 0; }
 
-  async slowReflect(provider: any, selfModel: any, skillLibrary: any): Promise<string[]> {
-    if (!this._turnBuf.length) return [];
-    const recent = this._turnBuf.slice(-20);
-    const summary = recent.map((t, i) =>
-      `${i + 1}. 用户: ${t.user.slice(0, 60)}\n   助手: ${t.assistant.slice(0, 60)}`
-    ).join("\n");
-    try {
-      const resp = await provider.chat(
-        [{ role: "user", content: `回顾交互，识别重复失败模式。\n${summary}\n输出要点。` }], 0.3, 400,
-      );
-      const analysis = (resp.content ?? "").trim();
-      const insights = analysis.split("\n")
-        .filter((l: string) => l.trim().startsWith("-") || l.trim().startsWith("1."))
-        .map((l: string) => l.trim().replace(/^[-\d.]+\s*/, ""));
-
-      this._entries.push({
-        timestamp: Date.now() / 1000, type: "slow",
-        whatWentWell: "", whatWentWrong: "",
-        insight: analysis.slice(0, 500), actionItems: insights.slice(0, 5),
-      });
-      this._lastSlow = Date.now() / 1000;
-
-      const failures = recent.filter(t => t.wrong && t.wrong !== "无明显问题");
-      if (failures.length >= 3 && skillLibrary) {
-        await skillLibrary.evolve(
-          failures.map(t => t.user.slice(0, 50)).join("; "),
-          failures.map(t => t.wrong).join("; "),
-          provider,
-        );
-      }
-      if (insights.length && selfModel) {
-        selfModel.recordGrowth("reflection", `反思: ${insights[0] ?? ""}`, 0.6);
-      }
-      return insights;
-    } catch { return []; }
-  }
-
   getRecentInsights(n = 5): string[] {
     return this._entries.filter(e => e.type === "slow").slice(-n).map(e => e.insight.slice(0, 200)).filter(Boolean);
   }

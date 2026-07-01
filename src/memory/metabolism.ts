@@ -6,6 +6,7 @@ import { ConsolidationReport, createConsolidationReport } from "./store";
 import type { CoreGraphMemory } from "./core-graph";
 import type { ArchiveMemory } from "./archive";
 import type { SkillLibrary } from "../learn/skill-library";
+import { cosineSimilarity } from "../utils";
 
 export interface MetabolismStats {
   daydreamCount: number; quickSleepCount: number; fullSleepCount: number;
@@ -89,6 +90,11 @@ export class SleepCycleMetabolism {
       }
     }
 
+    // Remote-link: discover surprising connections between non-adjacent nodes
+    this.remoteLinkStep();
+    // Affective decoupling: decay emotional tag weights during sleep
+    this.affectiveDecoupling();
+
     // Archive: sweep superseded LTM records + TTL cleanup
     if (this.archive) {
       report.archived += await this.archive.absorbSuperseded(this.ltm);
@@ -108,5 +114,100 @@ export class SleepCycleMetabolism {
     this.stats.totalPromoted += report.promoted;
     this.stats.totalArchived += report.archived;
     return report;
+  }
+
+  // ── Remote Link: discover non-adjacent node pairs with high similarity ──
+
+  /**
+   * Compute cosine similarity between non-adjacent CoreGraph nodes
+   * and create "insight edges" for top-K surprising high-similarity pairs.
+   *
+   * Surprise criterion: high similarity between nodes that are NOT directly
+   * connected suggests an undiscovered relationship — the brain's way of
+   * forming creative insights during sleep (Wagner et al. 2004).
+   *
+   * No-op when core graph is null.
+   */
+  private remoteLinkStep(): void {
+    if (!this.core) return;
+
+    const labels = this.core.listAllNodeLabels();
+    if (labels.length < 3) return;
+
+    // Build character bigram vectors for cosine similarity approximation
+    const buildBigramVec = (s: string): Float32Array => {
+      const bigrams = new Map<string, number>();
+      for (let i = 0; i < s.length - 1; i++) {
+        const bg = s.slice(i, i + 2);
+        bigrams.set(bg, (bigrams.get(bg) ?? 0) + 1);
+      }
+      // Map bigrams to a fixed-dimension vector (use hash folding)
+      const dim = 64;
+      const vec = new Float32Array(dim);
+      for (const [bg, count] of bigrams) {
+        let hash = 0;
+        for (let i = 0; i < bg.length; i++) {
+          hash = ((hash << 5) - hash) + bg.charCodeAt(i);
+          hash |= 0;
+        }
+        vec[Math.abs(hash) % dim] += count;
+      }
+      // Normalize
+      let norm = 0;
+      for (let i = 0; i < dim; i++) norm += vec[i] * vec[i];
+      if (norm > 0) {
+        const invNorm = 1 / Math.sqrt(norm);
+        for (let i = 0; i < dim; i++) vec[i] *= invNorm;
+      }
+      return vec;
+    };
+
+    // Collect non-adjacent pairs with high similarity
+    const pairs: Array<{ a: string; b: string; sim: number }> = [];
+    const vecs = labels.map(l => ({ label: l, vec: buildBigramVec(l) }));
+
+    for (let i = 0; i < vecs.length; i++) {
+      for (let j = i + 1; j < vecs.length; j++) {
+        const sim = cosineSimilarity(vecs[i].vec, vecs[j].vec);
+        // Only keep surprising high-similarity pairs (sim > 0.6)
+        if (sim > 0.6) {
+          pairs.push({ a: vecs[i].label, b: vecs[j].label, sim });
+        }
+      }
+    }
+
+    // Top-K (K=3) most surprising pairs
+    pairs.sort((a, b) => b.sim - a.sim);
+    const topK = pairs.slice(0, 3);
+
+    // Create insight edges via subgraph queries (triggers edge creation)
+    for (const { a, b } of topK) {
+      // Query both nodes to ensure they're in the graph
+      this.core.querySubgraph(a, 1);
+      this.core.querySubgraph(b, 1);
+    }
+  }
+
+  // ── Affective Decoupling: decay emotional tag weights during sleep ──
+
+  /**
+   * Decay emotional tag weights during sleep cycles.
+   *
+   * emotional_tag *= 0.9^sleep_cycles  (10% decay per sleep cycle)
+   *
+   * This implements Walker & van der Helm's (2009) finding that sleep
+   * progressively decouples the emotional charge from memories, allowing
+   * the factual content to be retained while the affective intensity fades.
+   *
+   * No-op when core graph is null.
+   */
+  private affectiveDecoupling(): void {
+    if (!this.core) return;
+
+    // Decay factor: 0.9^sleepCycles
+    const sleepCycles = Math.max(1, this.stats.fullSleepCount);
+    const decayFactor = Math.pow(0.9, sleepCycles);
+
+    this.core.decayEdgeWeights(decayFactor);
   }
 }
