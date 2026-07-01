@@ -1,14 +1,20 @@
 import type { ThemeConfig } from "./types";
 
 export const DEFAULT_THEME: ThemeConfig = {
-  name: "default",
+  name: "暮色",
   colors: {
-    primary: "#706CAA", secondary: "#F7DA94", accent: "#CC7EB1",
-    background: "#1A1A2E", surface: "#242442",
-    text: "#E8E8F0", textDim: "#8888A0",
-    success: "#80C080", warning: "#F7DA94", error: "#E08080",
+    primary: "#706CAA",      // 紫蓝 — 边框/标题/角色名/助手前缀
+    secondary: "#F7DA94",    // 暖米黄 — 高亮/活跃值/强调
+    accent: "#CC7EB1",       // 玫粉 — 用户消息边框/情绪标记
+    background: "#2a1f1d",   // 深褐 — 背景
+    surface: "#332624",      // 深褐亮 — 面板/色块背景/代码块
+    text: "#d4c4c0",         // 暖白 — 主文本
+    textDim: "#6b5755",      // 暗灰褐 — 次要文本/时间戳
+    success: "#8a9a5b",      // 苔绿 — 成功/✓
+    warning: "#e6c229",       // 金 — 警告/⚠/加载动画
+    error: "#c14646",        // 砖红 — 错误/✗
   },
-  layout: { leftPanelWidth: 32, showDashboard: true, dashboardDefaultTab: 0 },
+  layout: { leftPanelWidth: 42, showDashboard: true, dashboardDefaultTab: 0 },
   typography: { roleNameBold: true, timestampFormat: "HH:mm" },
   animation: { streaming: true, progressBars: true, sparkline: true },
 };
