@@ -1,14 +1,14 @@
 import React, { useRef, useEffect } from "react";
 import { Text, Box } from "ink";
 import { useThemeStore } from "../stores/theme-store";
-import { useAgentSnapshot } from "../agent-state";
+import { useAgentStore } from "../stores/agent-store";
 import { Sparkline } from "../widgets/Sparkline";
 
 const HISTORY_MAX = 20;
 
 export function DashboardHeader() {
   const theme = useThemeStore((s) => s.theme);
-  const snapshot = useAgentSnapshot();
+  const snapshot = useAgentStore((s) => s.snapshot);
   const historyRef = useRef<number[]>([]);
 
   // Accumulate saturation history whenever snapshot updates
