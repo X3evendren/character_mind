@@ -1016,6 +1016,68 @@ export class CharacterAgent {
     this.boredomState.engagementSetPoint = 0.55 + p.approachBias * 0.2;
   }
 
+  /** Lightweight state snapshot for UI rendering (no allocations, just reads). */
+  getStateSnapshot(): {
+    agentName: string; turnCount: number; saturation: number;
+    homeostatic: HomeostaticSnapshot;
+    pad: PAD | null; bisbas: BISBASState | null;
+    mood: MoodSnapshot; drives: Record<string, number>;
+    regulation: { strategy: string; suppressionCumulative: number; breakdown: boolean };
+    memory: { wm: number; stm: number; ltm: number; core: number; archive: number };
+    relationship: { trust: number; familiarity: number; avoidance: number; ambivalence: number };
+    narrative: { agency: number; communion: number; redemption: number; contamination: number; meaning: number };
+    metabolism: { lastDaydream: number; lastQuick: number; lastFull: number };
+  } {
+    // Compute narrative theme strengths from the themes array
+    const niSnapshot = this.narrativeIdentity?.snapshot();
+    const getThemeStrength = (type: string): number => {
+      const matching = niSnapshot?.themes?.filter(t => t.type === type) ?? [];
+      if (matching.length === 0) return 0.5;
+      return matching.reduce((sum, t) => sum + t.strength, 0) / matching.length;
+    };
+
+    return {
+      agentName: this.config.name ?? "林雨",
+      turnCount: this.turnCount,
+      saturation: this.saturation.s,
+      homeostatic: this.homeostatic.snapshot(),
+      pad: this.currentPAD,
+      bisbas: this.currentBISBAS,
+      mood: this.currentMood,
+      drives: this.drives.getDriveVector(),
+      regulation: {
+        strategy: this.breakdownState.inBreakdown ? "breakdown" : "reappraisal",
+        suppressionCumulative: this.suppressionCumulative,
+        breakdown: this.breakdownState.inBreakdown,
+      },
+      memory: {
+        wm: this.workingMemory.length,
+        stm: this.shortTermMemory.length,
+        ltm: this.longTermMemory.length,
+        core: this.coreGraph.length,
+        archive: this.archiveMemory.length,
+      },
+      relationship: {
+        trust: 0.5,
+        familiarity: 0.5,
+        avoidance: this.saturationDetector.avoidance ?? 0.1,
+        ambivalence: this.saturationDetector.ambivalence ?? 0.1,
+      },
+      narrative: {
+        agency: getThemeStrength("agency"),
+        communion: getThemeStrength("communion"),
+        redemption: getThemeStrength("redemption"),
+        contamination: getThemeStrength("contamination"),
+        meaning: getThemeStrength("meaning"),
+      },
+      metabolism: {
+        lastDaydream: this.metabolism?.stats?.lastDaydream ?? 0,
+        lastQuick: this.metabolism?.stats?.lastQuick ?? 0,
+        lastFull: this.metabolism?.stats?.lastFull ?? 0,
+      },
+    };
+  }
+
   async shutdown(): Promise<void> {
     await this.metabolism.fullSleep();
     await this.workingMemory.shutdown();
