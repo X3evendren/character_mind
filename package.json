@@ -47,6 +47,7 @@
     "semver": "*",
     "shell-quote": "*",
     "signal-exit": "*",
+    "sql.js": "^1.14.1",
     "strip-ansi": "*",
     "supports-hyperlinks": "*",
     "tsx": "^4.21.0",
