@@ -4,12 +4,13 @@ import { useThemeStore } from "../stores/theme-store";
 import { Message } from "./Message";
 import type { ChatMessage } from "./Message";
 
-export function ChatArea({ messages, maxVisible, onRetry, onEdit, onBranch }: {
+export function ChatArea({ messages, maxVisible, onRetry, onEdit, onBranch, onCopy }: {
   messages: ChatMessage[];
   maxVisible?: number;
   onRetry?: (msgId: string) => void;
   onEdit?: (msgId: string, newText: string) => void;
   onBranch?: (msgId: string) => void;
+  onCopy?: (msgId: string) => void;
 }) {
   const theme = useThemeStore((s) => s.theme);
 
@@ -23,14 +24,18 @@ export function ChatArea({ messages, maxVisible, onRetry, onEdit, onBranch }: {
     );
   }
 
+  const lastIndex = visible.length - 1;
+
   return React.createElement(Box, { flexDirection: "column", flexGrow: 1, paddingLeft: 1 },
-    ...visible.map((msg) =>
+    ...visible.map((msg, i) =>
       React.createElement(Message, {
         key: msg.id,
         msg,
-        onRetry: onRetry ? () => onRetry(msg.id) : undefined,
-        onEdit: onEdit ? (newText: string) => onEdit(msg.id, newText) : undefined,
-        onBranch: onBranch ? () => onBranch(msg.id) : undefined,
+        focused: i === lastIndex,
+        onRetry: onRetry ? () => onRetry(msg.id) : () => console.log("[TODO] 重试"),
+        onEdit: onEdit ? (newText: string) => onEdit(msg.id, newText) : (_newText: string) => console.log("[TODO] 编辑重发"),
+        onBranch: onBranch ? () => onBranch(msg.id) : () => console.log("[TODO] 分支对话"),
+        onCopy: onCopy ? () => onCopy(msg.id) : () => console.log("[TODO] 复制"),
       }),
     ),
   );
