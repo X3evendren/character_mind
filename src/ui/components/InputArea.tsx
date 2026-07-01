@@ -4,18 +4,31 @@ import { useThemeStore } from "../stores/theme-store";
 import { MultilineEditor } from "./MultilineEditor";
 import { Autocomplete } from "./Autocomplete";
 import type { AutocompleteItem } from "./Autocomplete";
+import { getCommandNames } from "../../commands/registry";
 
-/** Standard command definitions for autocomplete */
-const COMMANDS: AutocompleteItem[] = [
-  { label: "/quit", detail: "退出程序", category: "系统" },
-  { label: "/stats", detail: "显示状态快照", category: "系统" },
-  { label: "/theme", detail: "切换/设置主题", category: "系统" },
-  { label: "/help", detail: "显示帮助信息", category: "系统" },
-  { label: "/save", detail: "保存当前状态", category: "系统" },
-  { label: "/load", detail: "加载状态", category: "系统" },
-  { label: "/memory", detail: "查看记忆统计", category: "系统" },
-  { label: "/clear", detail: "清空对话", category: "系统" },
-];
+/**
+ * Chinese descriptions for known commands. Commands registered in the
+ * registry without an entry here simply show an empty detail.
+ */
+const COMMAND_DETAILS: Record<string, string> = {
+  "/dream": "进入梦境模式",
+  "/think": "触发深度思考",
+  "/model": "切换模型",
+  "/stats": "查看状态统计",
+  "/help": "显示帮助",
+  "/quit": "退出",
+  "/theme": "切换主题",
+  "/clear": "清空对话",
+};
+
+/** Build autocomplete items dynamically from the command registry. */
+function getCommandItems(): AutocompleteItem[] {
+  return getCommandNames().map((name) => ({
+    label: name,
+    detail: COMMAND_DETAILS[name] ?? "",
+    category: "命令",
+  }));
+}
 
 /**
  * Detect autocomplete trigger from current text.
@@ -81,10 +94,12 @@ export function InputArea({
 
   const trigger = useMemo(() => detectAutocomplete(text), [text]);
 
+  const commandItems = useMemo(() => getCommandItems(), []);
+
   const filteredItems = useMemo(() => {
-    if (!trigger) return COMMANDS;
+    if (!trigger) return commandItems;
     switch (trigger.category) {
-      case "命令": return filterItems(COMMANDS, trigger.partial);
+      case "命令": return filterItems(commandItems, trigger.partial);
       case "文件": return filterItems([
         { label: "@file config", detail: "配置文件" },
         { label: "@file memory", detail: "记忆文件" },
@@ -132,7 +147,7 @@ export function InputArea({
     React.createElement(MultilineEditor, {
       onSubmit: handleSubmit,
       onTextChange: handleTextChange,
-      maxLines: 6,
+      maxLines: 5,
       placeholder,
       disabled,
     }),
