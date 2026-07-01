@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/context";
+import { useThemeStore } from "../stores/theme-store";
 import { renderMarkdown } from "../markdown";
 import { ToolCallCard } from "../widgets/ToolCallCard";
 import { MessageMenu } from "./MessageMenu";
@@ -26,7 +26,7 @@ export function Message({ msg, onRetry, onEdit, onBranch }: {
   onEdit?: (newText: string) => void;
   onBranch?: () => void;
 }) {
-  const theme = useTheme();
+  const theme = useThemeStore((s) => s.theme);
   const [menuOpen, setMenuOpen] = useState(false);
   const time = new Date(msg.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 
@@ -59,9 +59,9 @@ export function Message({ msg, onRetry, onEdit, onBranch }: {
     React.createElement(Box, { paddingLeft: 2, flexDirection: "column" },
       isUser
         ? React.createElement(Text, { color: theme.colors.text }, msg.content)
-        : React.createElement(Text, null,
-            ...renderMarkdown(msg.content).map((s, i) =>
-              React.createElement(Text, { key: i }, s.ansi),
+        : React.createElement(Box, { flexDirection: "column", paddingLeft: 0 },
+            ...renderMarkdown(msg.content, theme).map((node, i) =>
+              React.createElement(Box, { key: i }, node),
             ),
           ),
     ),
