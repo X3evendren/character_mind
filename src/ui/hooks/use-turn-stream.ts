@@ -12,24 +12,18 @@ export function useTurnStream(agent: AgentPort | null) {
   const dispatchEvent = useChatStore((s) => s.dispatchEvent);
   const submitUserMessage = useChatStore((s) => s.submitUserMessage);
   const addNotification = useChatStore((s) => s.addNotification);
+  const setTurnStateBadge = useChatStore((s) => s.setTurnStateBadge);
   const refreshSnapshot = useAgentStore((s) => s.refreshNow);
 
   return useCallback(
     async (text: string) => {
       if (!agent) return;
 
-      // 斜杠命令不走 agent
+      // 斜杠命令不走 agent:输出以通知形式呈现(非 turn 内容)
       if (isCommandInput(text)) {
         const result = await router.dispatch(text, { agent: agent as never, args: "", raw: text });
         if (result.output) {
-          useChatStore.setState((s) => ({
-            ...s,
-            messages: [
-              ...s.messages,
-              { id: `msg_${Date.now()}_${s.nextMsgId}`, role: "system" as const, content: result.output, timestamp: Date.now() },
-            ],
-            nextMsgId: s.nextMsgId + 1,
-          }));
+          addNotification("info", result.output);
         }
         return;
       }
@@ -44,12 +38,19 @@ export function useTurnStream(agent: AgentPort | null) {
           if (event.type === "done" || (event.type === "phase_end" && event.phase === "update_instant")) {
             refreshSnapshot();
           }
+          // turn 收尾后，给当前 turn 盖上最终 PAD 状态徽章
+          if (event.type === "done") {
+            const snap = useAgentStore.getState().snapshot;
+            if (snap?.pad) {
+              setTurnStateBadge(snap.pad);
+            }
+          }
         }
       } catch (err: any) {
         addNotification("error", err?.message ?? "生成错误");
         useChatStore.setState((s) => ({ ...s, isGenerating: false }));
       }
     },
-    [agent, dispatchEvent, submitUserMessage, addNotification, refreshSnapshot],
+    [agent, dispatchEvent, submitUserMessage, addNotification, setTurnStateBadge, refreshSnapshot],
   );
 }

@@ -332,11 +332,14 @@ export const useChatStore = create<ChatStore>((set) => ({
     }),
   setTurnStateBadge: (pad) =>
     set((state) => {
-      if (!state.currentTurnId) return state;
+      // done 事件会清空 currentTurnId，此时回退到最后一个 turn(刚完成的轮次)，
+      // 以便在 turn 收尾后仍能盖上最终 PAD 状态徽章。
+      const targetId = state.currentTurnId ?? state.turns[state.turns.length - 1]?.id;
+      if (!targetId) return state;
       return {
         ...state,
         turns: state.turns.map((t) =>
-          t.id === state.currentTurnId ? { ...t, stateBadge: { pad } } : t,
+          t.id === targetId ? { ...t, stateBadge: { pad } } : t,
         ),
       };
     }),

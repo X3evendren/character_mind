@@ -3,25 +3,20 @@ import { Box, Text, useStdout } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 import { Dashboard } from "./Dashboard";
 import { StatusBar } from "./StatusBar";
-import { ChatArea } from "./ChatArea";
+import { TurnList } from "./TurnList";
 import { InputArea } from "./InputArea";
 import { NotificationToast } from "./NotificationToast";
-import type { ChatMessage } from "./Message";
 
 export function MainLayout({
-  messages,
   notifications,
   onSubmit,
   disabled,
   agentName,
-  statusText,
 }: {
-  messages: ChatMessage[];
   notifications: Array<{ id: string; message: string; type: "info" | "success" | "warning" | "error" }>;
   onSubmit: (text: string) => void;
   disabled?: boolean;
   agentName: string;
-  statusText?: string;
 }) {
   const theme = useThemeStore((s) => s.theme);
   const { stdout } = useStdout();
@@ -50,11 +45,8 @@ export function MainLayout({
       React.createElement(
         Box,
         { flexDirection: "column", flexGrow: 1 },
-        // Chat area
-        React.createElement(ChatArea, {
-          messages,
-          maxVisible: isCompact ? 10 : undefined,
-        }),
+        // Chat area (TurnList 直接从 store 订阅 turns)
+        React.createElement(TurnList, null),
 
         // Notification toast (right-aligned, inside chat column)
         React.createElement(NotificationToast, {
@@ -62,11 +54,6 @@ export function MainLayout({
           type: latestNotification?.type ?? "info",
           visible: latestNotification !== null,
         }),
-
-        // Status line (per-turn phase info)
-        statusText
-          ? React.createElement(Text, { color: theme.colors.textDim }, `  ${statusText}`)
-          : null,
 
         // Input area at bottom
         React.createElement(

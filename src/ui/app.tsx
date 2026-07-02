@@ -58,11 +58,9 @@ function AppInner() {
     handleSubmit(text);
   };
 
-  // 从 store 订阅渲染所需状态
-  const messages = useChatStore((s) => s.messages);
+  // 从 store 订阅渲染所需状态(TurnList 自行订阅 turns,statusText 已并入 Turn header)
   const notifications = useChatStore((s) => s.notifications);
   const isGenerating = useChatStore((s) => s.isGenerating);
-  const statusText = useChatStore((s) => s.statusText);
   const agentName = useAgentStore((s) => s.snapshot?.agentName ?? "林雨");
 
   if (bootError) {
@@ -70,12 +68,10 @@ function AppInner() {
   }
 
   return React.createElement(MainLayout, {
-    messages,
     notifications,
     onSubmit: wrappedSubmit,
     disabled: isGenerating,
     agentName,
-    statusText,
   });
 }
 
