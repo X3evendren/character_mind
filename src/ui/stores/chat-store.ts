@@ -8,6 +8,9 @@ import type { TurnEvent, TurnPhase } from "../../agent/events";
 /** Turn 硬上限:超出时丢弃最旧的 turns，防长会话 OOM。 */
 const MAX_TURNS = 50;
 
+/** 模块级 turn 序号(仅用于 UI 展示，非唯一 ID) */
+let nextDisplayTurnId = 0;
+
 export interface Block {
   id: string;
   type: "plan" | "reasoning" | "tool_call" | "tool_result" | "final" | "error";
@@ -53,8 +56,6 @@ export interface ChatState {
   pendingToolCalls: Map<string, string>; // callId -> blockId
   turnStartMs: number | null;
   lastTokenMs: number | null; // 最近一次 text_delta 的时间(ms)，用于 stalled 检测
-  nextTurnId: number;
-  nextBlockId: number;
 }
 
 const initialState: ChatState = {
@@ -67,18 +68,16 @@ const initialState: ChatState = {
   pendingToolCalls: new Map(),
   turnStartMs: null,
   lastTokenMs: null,
-  nextTurnId: 0,
-  nextBlockId: 0,
 };
 
 // ── Helpers ──
 
-function turnId(state: ChatState): string {
-  return `turn_${Date.now()}_${state.nextTurnId}`;
+function turnId(): string {
+  return `turn_${crypto.randomUUID()}`;
 }
 
-function blockId(state: ChatState): string {
-  return `blk_${Date.now()}_${state.nextBlockId}`;
+function blockId(): string {
+  return `blk_${crypto.randomUUID()}`;
 }
 
 function getCurrentTurn(state: ChatState): Turn | undefined {
@@ -110,8 +109,8 @@ function lastBlockIndexOf(turn: Turn | undefined, type: Block["type"]): number {
 }
 
 function nextBlockIdState(state: ChatState): { id: string; state: ChatState } {
-  const id = blockId(state);
-  return { id, state: { ...state, nextBlockId: state.nextBlockId + 1 } };
+  const id = blockId();
+  return { id, state };
 }
 
 function addNotificationToState(state: ChatState, type: Notification["type"], message: string): ChatState {
@@ -319,10 +318,10 @@ export const useChatStore = create<ChatStore>((set) => ({
   dispatchEvent: (event) => set((state) => reduceTurnEvent(state, event)),
   submitUserMessage: (text) =>
     set((state) => {
-      const id = turnId(state);
+      const id = turnId();
       const turn: Turn = {
         id,
-        turnId: state.nextTurnId,
+        turnId: nextDisplayTurnId++,
         userMessage: { content: text, timestamp: Date.now() },
         blocks: [],
         status: "streaming",
@@ -332,7 +331,6 @@ export const useChatStore = create<ChatStore>((set) => ({
         ...state,
         turns: [...state.turns, turn].slice(-MAX_TURNS),
         currentTurnId: id,
-        nextTurnId: state.nextTurnId + 1,
         isGenerating: true,
         turnStartMs: Date.now(),
       };
