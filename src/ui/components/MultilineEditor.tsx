@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import { Text, Box, useInput } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 
@@ -7,9 +7,9 @@ import { useThemeStore } from "../stores/theme-store";
  * When `blinkOn` is false, the cursor is replaced with a space of identical
  * width so the line length never changes (no layout shift).
  */
-function renderLineWithCursor(line: string, cursorCol: number, isActiveLine: boolean, blinkOn: boolean): string {
+function renderLineWithCursor(line: string, cursorCol: number, isActiveLine: boolean): string {
   if (!isActiveLine) return line || " ";
-  const cursorChar = blinkOn ? (cursorCol >= line.length ? "█" : "▌") : " ";
+  const cursorChar = cursorCol >= line.length ? "█" : "▌";
   if (cursorCol >= line.length) return line + cursorChar; // full block (or space) at end
   return line.slice(0, cursorCol) + cursorChar + line.slice(cursorCol); // half-block within
 }
@@ -74,14 +74,8 @@ export function MultilineEditor({
   const [lines, setLines] = useState<string[]>([""]);
   const [cursorLine, setCursorLine] = useState(0);
   const [cursorCol, setCursorCol] = useState(0);
-  const [cursorBlink, setCursorBlink] = useState(true);
 
-  // Idle cursor blink: toggles a space for the cursor char at 600ms.
-  // Replacing ▌/█ with a single space preserves line width (no layout shift).
-  useEffect(() => {
-    const t = setInterval(() => setCursorBlink(v => !v), 600);
-    return () => clearInterval(t);
-  }, []);
+  // 光标闪烁已移至 BlinkCursor 独立组件，避免 600ms setInterval 触发整个编辑器重渲染。
 
   const notifyTextChange = useCallback((newLines: string[]) => {
     if (onTextChange) {
@@ -250,11 +244,11 @@ export function MultilineEditor({
         return React.createElement(Text, {
           key: `line_${i}`,
           dimColor: true,
-        }, `  ${renderLineWithCursor(line, cursorCol, isActive, cursorBlink)}`);
+        }, `  ${renderLineWithCursor(line, cursorCol, isActive)}`);
       }
       const tokens = tokenizeLine(line, tokenColors, cursorCol, isActive);
       // Apply cursor to the token that contains the cursor position
-      const rendered = applyCursorToTokens(tokens, cursorCol, isActive, cursorBlink);
+      const rendered = applyCursorToTokens(tokens, cursorCol, isActive);
       return React.createElement(Text, { key: `line_${i}` },
         React.createElement(Text, { dimColor: true }, `> `),
         ...rendered.map((seg, j) =>
@@ -276,7 +270,6 @@ function applyCursorToTokens(
   tokens: Array<{ text: string; color?: string; dimColor?: boolean }>,
   cursorCol: number,
   isActiveLine: boolean,
-  blinkOn: boolean,
 ): Array<{ text: string; color?: string; dimColor?: boolean }> {
   if (!isActiveLine) return tokens;
 
@@ -293,7 +286,7 @@ function applyCursorToTokens(
       const offset = cursorCol - col;
       const before = token.text.slice(0, offset);
       const after = token.text.slice(offset);
-      const cursorChar = blinkOn ? (cursorCol >= col + token.text.length ? "█" : "▌") : " ";
+      const cursorChar = cursorCol >= col + token.text.length ? "█" : "▌";
       if (before) {
         result.push({ text: before, color: token.color, dimColor: token.dimColor });
       }
@@ -307,7 +300,7 @@ function applyCursorToTokens(
 
   // Cursor at end of all text
   if (!inserted && isActiveLine) {
-    result.push({ text: blinkOn ? "█" : " ", dimColor: false });
+    result.push({ text: "█", dimColor: false });
   }
 
   return result;
