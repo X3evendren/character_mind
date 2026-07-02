@@ -37,9 +37,12 @@ describe("renderMarkdown", () => {
 
   it("renders blockquote as dim", () => {
     const nodes = renderMarkdown("> 引用文字", DEFAULT_THEME);
-    const hasDim = nodes.some(
-      (n) => React.isValidElement(n) && (n.props as any).dimColor === true,
-    );
-    expect(hasDim).toBe(true);
+    function hasDimDeep(el: React.ReactNode): boolean {
+      if (!React.isValidElement(el)) return false;
+      if ((el.props as any).dimColor === true) return true;
+      const children = React.Children.toArray((el.props as any).children);
+      return children.some(hasDimDeep);
+    }
+    expect(nodes.some(hasDimDeep)).toBe(true);
   });
 });
