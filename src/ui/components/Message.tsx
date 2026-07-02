@@ -68,7 +68,7 @@ export function Message({ msg, onRetry, onEdit, onBranch, onCopy, focused }: {
   const isUser = msg.role === "user";
   const prefix = isUser ? ">" : "|";
   const prefixColor = isUser ? c.accent : c.primary;
-  const align = isUser ? "flex-end" : "flex-start";
+  const align = "flex-start";
   const roleLabel = isUser ? "你" : (msg.role === "assistant" ? "林雨" : msg.role);
 
   return React.createElement(Box, { flexDirection: "column", alignItems: align, marginBottom: 1 },
