@@ -1,22 +1,37 @@
 /**
- * Chat Store — 聊天消息/事件流/状态/通知。
+ * Chat Store — Turn/Block 执行图结构。
  * reduceTurnEvent 是独立纯函数，store action dispatchEvent 一行调用。
  */
 import { create } from "zustand";
-import type { TurnEvent } from "../../agent/events";
+import type { TurnEvent, TurnPhase } from "../../agent/events";
 
-export interface ChatMessage {
+export interface Block {
   id: string;
-  role: "user" | "assistant" | "system" | "tool";
+  type: "plan" | "reasoning" | "tool_call" | "tool_result" | "final" | "error";
   content: string;
+  status: "streaming" | "done";
+  // tool 专用
+  callId?: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult?: string;
+  toolSuccess?: boolean;
+  durationMs?: number;
+  // reasoning 专用
+  collapsed?: boolean;
+  summary?: string;
+}
+
+export interface Turn {
+  id: string;
+  turnId: number;
+  userMessage: { content: string; timestamp: number };
+  blocks: Block[];
+  status: "streaming" | "completed" | "interrupted";
   timestamp: number;
-  toolCall?: {
-    tool: string;
-    args: Record<string, unknown>;
-    success: boolean;
-    outputPreview: string;
-    durationMs: number;
-  };
+  elapsedMs?: number;
+  totalTokens?: number;
+  stateBadge?: { pad?: { pleasure: number; arousal: number; dominance: number } };
 }
 
 export interface Notification {
@@ -26,40 +41,97 @@ export interface Notification {
 }
 
 export interface ChatState {
-  messages: ChatMessage[];
-  statusText: string;
+  turns: Turn[];
+  currentTurnId: string | null;
   isGenerating: boolean;
+  statusText: string;
   notifications: Notification[];
-  pendingToolCalls: Map<string, string>;
+  debugMode: boolean;
+  pendingToolCalls: Map<string, string>; // callId -> blockId
   turnStartMs: number | null;
-  nextMsgId: number;
+  nextTurnId: number;
+  nextBlockId: number;
 }
 
 const initialState: ChatState = {
-  messages: [],
-  statusText: "",
+  turns: [],
+  currentTurnId: null,
   isGenerating: false,
+  statusText: "",
   notifications: [],
+  debugMode: false,
   pendingToolCalls: new Map(),
   turnStartMs: null,
-  nextMsgId: 0,
+  nextTurnId: 0,
+  nextBlockId: 0,
 };
 
-function msgId(state: ChatState): string {
-  return `msg_${Date.now()}_${state.nextMsgId}`;
+// ── Helpers ──
+
+function turnId(state: ChatState): string {
+  return `turn_${Date.now()}_${state.nextTurnId}`;
+}
+
+function blockId(state: ChatState): string {
+  return `blk_${Date.now()}_${state.nextBlockId}`;
+}
+
+function getCurrentTurn(state: ChatState): Turn | undefined {
+  if (!state.currentTurnId) return undefined;
+  return state.turns.find((t) => t.id === state.currentTurnId);
+}
+
+/** Update the current turn immutably; no-op if there is no current turn. */
+function updateCurrentTurn(state: ChatState, updater: (turn: Turn) => Turn): ChatState {
+  if (!state.currentTurnId) return state;
+  return {
+    ...state,
+    turns: state.turns.map((t) => (t.id === state.currentTurnId ? updater(t) : t)),
+  };
+}
+
+/** Append a block to the current turn; no-op if there is no current turn. */
+function appendBlock(state: ChatState, block: Block): ChatState {
+  return updateCurrentTurn(state, (turn) => ({ ...turn, blocks: [...turn.blocks, block] }));
+}
+
+/** Index of the last block of a given type in the current turn (-1 if none). */
+function lastBlockIndexOf(turn: Turn | undefined, type: Block["type"]): number {
+  if (!turn) return -1;
+  for (let i = turn.blocks.length - 1; i >= 0; i--) {
+    if (turn.blocks[i].type === type) return i;
+  }
+  return -1;
+}
+
+function nextBlockIdState(state: ChatState): { id: string; state: ChatState } {
+  const id = blockId(state);
+  return { id, state: { ...state, nextBlockId: state.nextBlockId + 1 } };
+}
+
+function addNotificationToState(state: ChatState, type: Notification["type"], message: string): ChatState {
+  return {
+    ...state,
+    notifications: [
+      ...state.notifications.slice(-4),
+      { id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, type, message },
+    ],
+  };
 }
 
 /**
  * 事件归约纯函数 — 给定 state + event，返回新 state。
- * 可单测、可回放。不依赖 store。
+ * 可单测、可回放。不依赖 store。Turn 由 submitUserMessage 创建，
+ * reducer 只处理事件流（不创建 Turn）。
  */
 export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
   switch (event.type) {
     case "phase_start": {
+      // Turn 由 submitUserMessage 创建；此处只更新状态文案。
       return {
         ...state,
         isGenerating: true,
-        statusText: `${event.phase}...`,
+        statusText: `${event.phase}`,
         turnStartMs: state.turnStartMs ?? Date.now(),
       };
     }
@@ -67,124 +139,155 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
       return { ...state, statusText: `${event.phase} done` };
     }
     case "text_delta": {
-      const last = state.messages[state.messages.length - 1];
-      if (last && last.role === "assistant") {
-        const updated = [...state.messages];
-        updated[updated.length - 1] = {
-          ...last,
-          content: last.content + event.text,
-        };
-        return { ...state, messages: updated };
+      const turn = getCurrentTurn(state);
+      if (!turn) return state;
+      const lastFinalIdx = lastBlockIndexOf(turn, "final");
+      if (lastFinalIdx !== -1 && turn.blocks[lastFinalIdx].status === "streaming") {
+        return updateCurrentTurn(state, (t) => {
+          const blocks = t.blocks.slice();
+          blocks[lastFinalIdx] = {
+            ...blocks[lastFinalIdx],
+            content: blocks[lastFinalIdx].content + event.text,
+          };
+          return { ...t, blocks };
+        });
       }
-      const newMsg: ChatMessage = {
-        id: msgId(state),
-        role: "assistant",
+      // 无 final 块（或已完成）→ 创建新的 streaming final 块
+      const { id, state: nextState } = nextBlockIdState(state);
+      const block: Block = {
+        id,
+        type: "final",
         content: event.text,
-        timestamp: Date.now(),
+        status: "streaming",
       };
-      return { ...state, messages: [...state.messages, newMsg], nextMsgId: state.nextMsgId + 1 };
+      return appendBlock(nextState, block);
     }
     case "reasoning": {
-      // reasoning 暂存为 system 消息（C 阶段重做为独立内心独白块）
-      const newMsg: ChatMessage = {
-        id: msgId(state),
-        role: "system",
-        content: `[内心独白] ${event.text}`,
-        timestamp: Date.now(),
+      const { id, state: nextState } = nextBlockIdState(state);
+      const block: Block = {
+        id,
+        type: "reasoning",
+        content: event.text,
+        status: "done",
+        collapsed: true,
       };
-      return { ...state, messages: [...state.messages, newMsg], nextMsgId: state.nextMsgId + 1 };
+      return appendBlock(nextState, block);
     }
     case "tool_start": {
-      const id = msgId(state);
-      const pendingToolCalls = new Map(state.pendingToolCalls);
-      pendingToolCalls.set(event.callId, id);
-      const toolMsg: ChatMessage = {
+      const { id, state: nextState } = nextBlockIdState(state);
+      const block: Block = {
         id,
-        role: "tool",
+        type: "tool_call",
         content: "",
-        timestamp: Date.now(),
-        toolCall: {
-          tool: event.tool,
-          args: event.args,
-          success: false,
-          outputPreview: "...",
-          durationMs: 0,
-        },
+        status: "streaming",
+        callId: event.callId,
+        toolName: event.tool,
+        toolArgs: event.args,
       };
+      const pendingToolCalls = new Map(nextState.pendingToolCalls);
+      pendingToolCalls.set(event.callId, id);
       return {
-        ...state,
-        messages: [...state.messages, toolMsg],
+        ...appendBlock(nextState, block),
         pendingToolCalls,
-        nextMsgId: state.nextMsgId + 1,
         statusText: `工具: ${event.tool}...`,
       };
     }
     case "tool_end": {
-      const toolMsgId = state.pendingToolCalls.get(event.callId);
-      if (!toolMsgId) return state;
-      const messages = state.messages.map((m) => {
-        if (m.id === toolMsgId && m.toolCall) {
-          return {
-            ...m,
-            content: event.outputPreview.slice(0, 200),
-            toolCall: {
-              ...m.toolCall,
-              success: event.success,
-              outputPreview: event.outputPreview,
-              durationMs: event.durationMs,
-            },
-          };
-        }
-        return m;
-      });
+      const blockId = state.pendingToolCalls.get(event.callId);
+      if (!blockId) return state;
       const pendingToolCalls = new Map(state.pendingToolCalls);
       pendingToolCalls.delete(event.callId);
-      return {
+      const nextState = {
         ...state,
-        messages,
         pendingToolCalls,
         statusText: `工具 ${event.tool} ${event.success ? "完成" : "失败"}`,
       };
+      return updateCurrentTurn(nextState, (t) => ({
+        ...t,
+        blocks: t.blocks.map((b) =>
+          b.id === blockId
+            ? {
+                ...b,
+                status: "done",
+                toolSuccess: event.success,
+                toolResult: event.outputPreview,
+                durationMs: event.durationMs,
+              }
+            : b,
+        ),
+      }));
     }
     case "cold_layer_start": {
-      return {
-        ...state,
-        notifications: [
-          ...state.notifications.slice(-4),
-          { id: `n_${Date.now()}`, type: "info" as const, message: `冷分析: ${event.name}` },
-        ],
+      const { id, state: nextState } = nextBlockIdState(state);
+      const block: Block = {
+        id,
+        type: "reasoning",
+        content: "",
+        status: "streaming",
+        collapsed: true,
+        summary: event.name,
       };
+      return appendBlock(nextState, block);
     }
-    case "cold_layer_end":
+    case "cold_layer_end": {
+      // 找到最后一个 summary 匹配 event.name 的 reasoning 块，追加 summary 到 content
+      const turn = getCurrentTurn(state);
+      if (!turn) return state;
+      let targetIdx = -1;
+      for (let i = turn.blocks.length - 1; i >= 0; i--) {
+        const b = turn.blocks[i];
+        if (b.type === "reasoning" && b.summary === event.name) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx === -1) return state;
+      return updateCurrentTurn(state, (t) => {
+        const blocks = t.blocks.slice();
+        blocks[targetIdx] = {
+          ...blocks[targetIdx],
+          content: blocks[targetIdx].content + event.summary,
+          status: "done",
+        };
+        return { ...t, blocks };
+      });
+    }
     case "cold_skipped": {
       return state;
     }
     case "error": {
-      const errMsg: ChatMessage = {
-        id: msgId(state),
-        role: "system",
+      const { id, state: withBlockId } = nextBlockIdState(state);
+      const errorBlock: Block = {
+        id,
+        type: "error",
         content: `错误 [${event.phase}]: ${event.message}`,
-        timestamp: Date.now(),
+        status: "done",
       };
+      let nextState = appendBlock(withBlockId, errorBlock);
+      // 标记当前 turn 为 interrupted
+      nextState = updateCurrentTurn(nextState, (t) => ({ ...t, status: "interrupted" }));
+      // 添加通知
+      nextState = addNotificationToState(nextState, "error", event.message);
       return {
-        ...state,
-        messages: [...state.messages, errMsg],
-        nextMsgId: state.nextMsgId + 1,
-        notifications: [
-          ...state.notifications.slice(-4),
-          { id: `n_${Date.now()}`, type: "error" as const, message: event.message },
-        ],
+        ...nextState,
         isGenerating: false,
       };
     }
     case "done": {
-      const elapsed = state.turnStartMs ? ((Date.now() - state.turnStartMs) / 1000).toFixed(1) : "0";
+      const elapsedSec = (event.elapsedMs / 1000).toFixed(1);
+      const nextState = updateCurrentTurn(state, (t) => ({
+        ...t,
+        status: "completed",
+        elapsedMs: event.elapsedMs,
+        totalTokens: event.totalTokens,
+      }));
       return {
-        ...state,
+        ...nextState,
         isGenerating: false,
-        statusText: `第${event.turnId}轮 ${elapsed}秒 ${event.totalTokens}词`,
+        currentTurnId: null, // turn 已关闭
         pendingToolCalls: new Map(),
         turnStartMs: null,
+        statusText: `第${event.turnId}轮 ${elapsedSec}秒 ${event.totalTokens}词`,
       };
     }
     default: {
@@ -198,23 +301,45 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
 interface ChatStore extends ChatState {
   dispatchEvent: (event: TurnEvent) => void;
   submitUserMessage: (text: string) => void;
+  setTurnStateBadge: (pad: { pleasure: number; arousal: number; dominance: number }) => void;
   addNotification: (type: Notification["type"], message: string) => void;
   clearMessages: () => void;
+  toggleDebugMode: () => void;
 }
 
 export const useChatStore = create<ChatStore>((set) => ({
   ...initialState,
   dispatchEvent: (event) => set((state) => reduceTurnEvent(state, event)),
   submitUserMessage: (text) =>
-    set((state) => ({
-      ...state,
-      messages: [
-        ...state.messages,
-        { id: msgId(state), role: "user" as const, content: text, timestamp: Date.now() },
-      ],
-      nextMsgId: state.nextMsgId + 1,
-      isGenerating: true,
-    })),
+    set((state) => {
+      const id = turnId(state);
+      const turn: Turn = {
+        id,
+        turnId: state.nextTurnId,
+        userMessage: { content: text, timestamp: Date.now() },
+        blocks: [],
+        status: "streaming",
+        timestamp: Date.now(),
+      };
+      return {
+        ...state,
+        turns: [...state.turns, turn],
+        currentTurnId: id,
+        nextTurnId: state.nextTurnId + 1,
+        isGenerating: true,
+        turnStartMs: Date.now(),
+      };
+    }),
+  setTurnStateBadge: (pad) =>
+    set((state) => {
+      if (!state.currentTurnId) return state;
+      return {
+        ...state,
+        turns: state.turns.map((t) =>
+          t.id === state.currentTurnId ? { ...t, stateBadge: { pad } } : t,
+        ),
+      };
+    }),
   addNotification: (type, message) =>
     set((state) => {
       const id = `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -225,4 +350,5 @@ export const useChatStore = create<ChatStore>((set) => ({
       return { ...state, notifications };
     }),
   clearMessages: () => set({ ...initialState }),
+  toggleDebugMode: () => set((state) => ({ ...state, debugMode: !state.debugMode })),
 }));
