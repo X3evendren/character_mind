@@ -2,12 +2,35 @@
  * renderMarkdown — markdown → React 节点（Ink 原生 Text props 着色）。
  * 替代旧 markdown.ts 的 ANSI 转义字符串方案（Ink 不解析内嵌 ANSI）。
  * 着色走 theme，不硬编码终端色。
+ * LRU 缓存:按 md+theme name 做 key，避免每次 delta 全量重解析。
  */
 import React from "react";
 import { Text } from "ink";
 import type { ThemeConfig } from "./theme/types";
 
+const MD_CACHE_MAX = 64;
+const mdCache = new Map<string, React.ReactNode[]>();
+
 export function renderMarkdown(md: string, theme: ThemeConfig): React.ReactNode[] {
+  const cacheKey = `${theme.name}::${md}`;
+  const cached = mdCache.get(cacheKey);
+  if (cached) {
+    // LRU: 移到末尾(最近使用)
+    mdCache.delete(cacheKey);
+    mdCache.set(cacheKey, cached);
+    return cached;
+  }
+  const result = renderMarkdownImpl(md, theme);
+  if (mdCache.size >= MD_CACHE_MAX) {
+    // 淘汰最旧(第一个)
+    const firstKey = mdCache.keys().next().value;
+    if (firstKey) mdCache.delete(firstKey);
+  }
+  mdCache.set(cacheKey, result);
+  return result;
+}
+
+function renderMarkdownImpl(md: string, theme: ThemeConfig): React.ReactNode[] {
   const c = theme.colors;
   const lines = md.split("\n");
   const nodes: React.ReactNode[] = [];

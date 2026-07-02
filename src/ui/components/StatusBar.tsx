@@ -11,7 +11,7 @@ import { useAgentStore } from "../stores/agent-store";
  * within the chat area, so this bar keeps only the round count, PAD
  * summary, and saturation.
  */
-export function StatusBar({ agentName: _agentName = "", notificationCount: _notificationCount = 0 }: {
+export const StatusBar = React.memo(function StatusBar({ agentName: _agentName = "", notificationCount: _notificationCount = 0 }: {
   agentName?: string;
   notificationCount?: number;
 }) {
@@ -31,4 +31,4 @@ export function StatusBar({ agentName: _agentName = "", notificationCount: _noti
     React.createElement(Text, { color: c.accent }, ` ${padText}  `),
     React.createElement(Text, { color: c.textDim }, ` ${sat}  `),
   );
-}
+});

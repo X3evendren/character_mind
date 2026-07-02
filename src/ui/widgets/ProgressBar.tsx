@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Text } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 
-export function ProgressBar({ label, value, max, width = 10 }: {
+export const ProgressBar = React.memo(function ProgressBar({ label, value, max, width = 10 }: {
   label: string; value: number; max: number; width?: number;
 }) {
   const theme = useThemeStore((s) => s.theme);
@@ -57,4 +57,4 @@ export function ProgressBar({ label, value, max, width = 10 }: {
     React.createElement(Text, { color: ratio > 0.7 ? theme.colors.success : ratio > 0.3 ? theme.colors.secondary : theme.colors.error }, bar),
     React.createElement(Text, { color: theme.colors.textDim }, ` ${value.toFixed(2)}/${max.toFixed(2)}`),
   );
-}
+});

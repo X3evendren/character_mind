@@ -5,6 +5,9 @@
 import { create } from "zustand";
 import type { TurnEvent, TurnPhase } from "../../agent/events";
 
+/** Turn 硬上限:超出时丢弃最旧的 turns，防长会话 OOM。 */
+const MAX_TURNS = 50;
+
 export interface Block {
   id: string;
   type: "plan" | "reasoning" | "tool_call" | "tool_result" | "final" | "error";
@@ -323,7 +326,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       };
       return {
         ...state,
-        turns: [...state.turns, turn],
+        turns: [...state.turns, turn].slice(-MAX_TURNS),
         currentTurnId: id,
         nextTurnId: state.nextTurnId + 1,
         isGenerating: true,

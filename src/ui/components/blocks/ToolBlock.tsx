@@ -18,7 +18,7 @@ const TOOL_ICONS: Record<string, string> = {
   web_search: "🔎",
 };
 
-export function ToolBlock({ block }: { block: Block }) {
+export const ToolBlock = React.memo(function ToolBlock({ block }: { block: Block }) {
   const c = useThemeStore((s) => s.theme).colors;
   const icon = TOOL_ICONS[block.toolName ?? ""] ?? "⚙";
   const isRunning = block.status === "streaming";
@@ -48,4 +48,4 @@ export function ToolBlock({ block }: { block: Block }) {
       ? React.createElement(Text, { color: c.textDim }, ` ${(block.durationMs / 1000).toFixed(1)}秒`)
       : null,
   );
-}
+});

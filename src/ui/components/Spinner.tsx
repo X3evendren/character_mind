@@ -10,7 +10,7 @@ const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "
 // 来回弹: [...frames, ...frames.reverse()] — claude-code 模式
 const BOUNCE_FRAMES = [...FRAMES, ...[...FRAMES].reverse()];
 
-export function Spinner({ active = true, color }: { active?: boolean; color?: string }) {
+export const Spinner = React.memo(function Spinner({ active = true, color }: { active?: boolean; color?: string }) {
   const themeColor = useThemeStore((s) => s.theme).colors.warning;
   const c = color ?? themeColor;
   const [frame, setFrame] = useState(0);
@@ -30,4 +30,4 @@ export function Spinner({ active = true, color }: { active?: boolean; color?: st
     { width: 2, height: 1, flexShrink: 0 },
     React.createElement(Text, { color: c }, BOUNCE_FRAMES[frame]),
   );
-}
+});

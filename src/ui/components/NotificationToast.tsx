@@ -4,7 +4,7 @@ import { useThemeStore } from "../stores/theme-store";
 
 export type ToastType = "info" | "success" | "warning" | "error";
 
-export function NotificationToast({ message, type, visible }: {
+export const NotificationToast = React.memo(function NotificationToast({ message, type, visible }: {
   message: string;
   type?: ToastType;
   visible: boolean;
@@ -37,4 +37,4 @@ export function NotificationToast({ message, type, visible }: {
     React.createElement(Text, { color, bold: true }, `[${icon}] `),
     React.createElement(Text, { color: theme.colors.text }, message),
   );
-}
+});
