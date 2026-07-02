@@ -4,28 +4,17 @@ import { useThemeStore } from "../stores/theme-store";
 import { MultilineEditor } from "./MultilineEditor";
 import { Autocomplete } from "./Autocomplete";
 import type { AutocompleteItem } from "./Autocomplete";
-import { getCommandNames } from "../../commands/registry";
+import { getCommands } from "../../commands/registry";
+import { HistoryStore } from "../history";
 
-/**
- * Chinese descriptions for known commands. Commands registered in the
- * registry without an entry here simply show an empty detail.
- */
-const COMMAND_DETAILS: Record<string, string> = {
-  "/dream": "进入梦境模式",
-  "/think": "触发深度思考",
-  "/model": "切换模型",
-  "/stats": "查看状态统计",
-  "/help": "显示帮助",
-  "/quit": "退出",
-  "/theme": "切换主题",
-  "/clear": "清空对话",
-};
+// 模块级单例，整个会话共享输入历史
+const historyStore = new HistoryStore();
 
-/** Build autocomplete items dynamically from the command registry. */
+/** 从命令注册表动态构建补全列表(含 description) */
 function getCommandItems(): AutocompleteItem[] {
-  return getCommandNames().map((name) => ({
-    label: name,
-    detail: COMMAND_DETAILS[name] ?? "",
+  return getCommands().map((cmd) => ({
+    label: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
+    detail: cmd.description ?? "",
     category: "命令",
   }));
 }
@@ -156,6 +145,7 @@ export function InputArea({
         maxLines: 5,
         placeholder,
         disabled,
+        history: historyStore,
       }),
     ),
 

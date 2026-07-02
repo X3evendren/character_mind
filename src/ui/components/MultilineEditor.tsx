@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Text, Box, useInput } from "ink";
 import { useThemeStore } from "../stores/theme-store";
+import type { HistoryStore } from "../history";
 
 /**
  * Cursor characters: block at end, vertical bar within text.
@@ -63,12 +64,14 @@ export function MultilineEditor({
   maxLines = 6,
   placeholder = "输入消息...",
   disabled = false,
+  history,
 }: {
   onSubmit: (text: string) => void;
   onTextChange?: (text: string) => void;
   maxLines?: number;
   placeholder?: string;
   disabled?: boolean;
+  history?: HistoryStore;
 }) {
   const theme = useThemeStore((s) => s.theme);
   const [lines, setLines] = useState<string[]>([""]);
@@ -150,13 +153,14 @@ export function MultilineEditor({
   const submit = useCallback(() => {
     const text = lines.join("\n").trim();
     if (text) {
+      if (history) history.add(text);
       onSubmit(text);
       setLines([""]);
       setCursorLine(0);
       setCursorCol(0);
       if (onTextChange) onTextChange("");
     }
-  }, [lines, onSubmit, onTextChange]);
+  }, [lines, onSubmit, onTextChange, history]);
 
   useInput((input: string, key: any) => {
     if (disabled) return;
@@ -192,6 +196,16 @@ export function MultilineEditor({
       return;
     }
     if (key.upArrow) {
+      // 单行空输入 + 有 history → 向上浏览历史(↑)
+      if (cursorLine === 0 && lines.length === 1 && lines[0] === "" && history) {
+        const entry = history.up();
+        if (entry !== null) {
+          setLines([entry]);
+          setCursorCol(entry.length);
+          if (onTextChange) onTextChange(entry);
+        }
+        return;
+      }
       if (cursorLine > 0) {
         const newLine = cursorLine - 1;
         const targetLen = (lines[newLine] ?? "").length;
@@ -201,6 +215,21 @@ export function MultilineEditor({
       return;
     }
     if (key.downArrow) {
+      // 单行 + 在末尾 + 有 history → 向下浏览历史(↓)
+      if (cursorLine === 0 && lines.length === 1 && history) {
+        const entry = history.down();
+        if (entry !== null) {
+          setLines([entry]);
+          setCursorCol(entry.length);
+          if (onTextChange) onTextChange(entry);
+        } else {
+          // 到底部 → 清空输入
+          setLines([""]);
+          setCursorCol(0);
+          if (onTextChange) onTextChange("");
+        }
+        return;
+      }
       if (cursorLine < lines.length - 1) {
         const newLine = cursorLine + 1;
         const targetLen = (lines[newLine] ?? "").length;
