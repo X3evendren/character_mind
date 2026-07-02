@@ -1,6 +1,7 @@
-import React from "react";
-import { Box, Text, useStdout } from "ink";
+import React, { useState, useEffect } from "react";
+import { Box, Text, useStdout, useInput } from "ink";
 import { useThemeStore } from "../stores/theme-store";
+import { useChatStore } from "../stores/chat-store";
 import { Dashboard } from "./Dashboard";
 import { StatusBar } from "./StatusBar";
 import { TurnList } from "./TurnList";
@@ -22,6 +23,7 @@ export function MainLayout({
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
+  const turnCount = useChatStore((s) => s.turns.length);
 
   // Responsive breakpoints
   const showDashboard = cols >= 100 && theme.layout.showDashboard;
@@ -29,9 +31,26 @@ export function MainLayout({
 
   const latestNotification = notifications.length > 0 ? notifications[notifications.length - 1] : null;
 
+  // 滚动偏移:0 = 锁定底部(最新),>0 = 向上看历史
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  // 新 turn 到来时自动重置到底部
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [turnCount]);
+
+  // Ctrl+↑ 向上看历史, Ctrl+↓ 回到底部, 不与 MultilineEditor 的 ↑↓ 冲突
+  useInput((_input, key) => {
+    if (key.upArrow && key.ctrl) {
+      setScrollOffset(o => Math.min(o + 1, Math.max(0, turnCount - 1)));
+    }
+    if (key.downArrow && key.ctrl) {
+      setScrollOffset(o => Math.max(0, o - 1));
+    }
+  });
+
   // 固定布局高度:StatusBar(1) + InputArea(边框2+编辑器1+footer1=4) + Notification(1)
-  // 聊天区 = 终端高度 - 固定区域
-  const inputHeight = 4; // 圆角边框(2) + 编辑器(1) + footer提示(1)
+  const inputHeight = 4;
   const notificationHeight = latestNotification ? 1 : 0;
   const chatHeight = Math.max(3, rows - 1 - inputHeight - notificationHeight);
 
@@ -56,8 +75,14 @@ export function MainLayout({
         { flexDirection: "column", flexGrow: 1, overflow: "hidden" },
         // Chat area — 固定高度，超出部分隐藏，TurnList 内部做窗口滚动
         React.createElement(Box, { height: chatHeight, flexShrink: 0, overflow: "hidden" },
-          React.createElement(TurnList, { maxRows: chatHeight }),
+          React.createElement(TurnList, { maxRows: chatHeight, scrollOffset }),
         ),
+
+        // 滚动提示(仅当向上查看历史时显示)
+        scrollOffset > 0
+          ? React.createElement(Text, { color: theme.colors.textDim, dimColor: true },
+              `  ↑ 查看历史(${scrollOffset}轮前) · Ctrl+↓ 回到底部`)
+          : null,
 
         // Notification toast
         latestNotification

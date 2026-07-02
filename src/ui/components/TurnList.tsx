@@ -1,8 +1,9 @@
 /**
  * TurnList — 对话区，显示 Turn 列表，窗口滚动锁定到底部(最新)。
  * 只渲染最后能放入 maxRows 行的 turns，防止内容溢出导致输入框抖动。
+ * scrollOffset > 0 时向上查看历史(Ctrl+↑/↓ 控制)。
  */
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 import { useChatStore } from "../stores/chat-store";
@@ -14,7 +15,6 @@ function estimateTurnRows(turn: TurnType): number {
   let rows = 4; // 用户消息行(1) + 内容行(1) + 间距(1) + header(1)
   for (const block of turn.blocks) {
     if (block.type === "final") {
-      // markdown 内容:按换行符估算行数
       const lineCount = block.content.split("\n").length;
       rows += Math.max(1, lineCount) + 1; // 内容行 + 流式光标行
     } else if (block.type === "reasoning") {
@@ -29,23 +29,29 @@ function estimateTurnRows(turn: TurnType): number {
   return rows;
 }
 
-export function TurnList({ maxRows = 20 }: { maxRows?: number }) {
+export function TurnList({ maxRows = 20, scrollOffset = 0 }: {
+  maxRows?: number;
+  scrollOffset?: number;
+}) {
   const theme = useThemeStore((s) => s.theme);
   const turns = useChatStore((s) => s.turns);
 
-  // 从最新 turn 开始向前累计行数，只保留能放入 maxRows 的 turns
+  // 从最新 turn 向前累计行数，只保留能放入 maxRows 的 turns。
+  // scrollOffset > 0 时，从更早的位置开始截取(向上看历史)。
   const visibleTurns = useMemo(() => {
     if (turns.length === 0) return [];
     const result: TurnType[] = [];
     let usedRows = 0;
-    for (let i = turns.length - 1; i >= 0; i--) {
+    // 从最新 turn 开始，跳过 scrollOffset 个 turn
+    const startIndex = turns.length - 1 - scrollOffset;
+    for (let i = startIndex; i >= 0; i--) {
       const turnRows = estimateTurnRows(turns[i]);
       if (usedRows + turnRows > maxRows && result.length > 0) break;
       result.unshift(turns[i]);
       usedRows += turnRows;
     }
     return result;
-  }, [turns, maxRows]);
+  }, [turns, maxRows, scrollOffset]);
 
   if (turns.length === 0) {
     return React.createElement(
@@ -57,7 +63,6 @@ export function TurnList({ maxRows = 20 }: { maxRows?: number }) {
 
   const lastIndex = visibleTurns.length - 1;
 
-  // 用固定高度 + justifyContent flex-end 确保内容底部对齐
   return React.createElement(
     Box,
     { flexDirection: "column", height: maxRows, paddingLeft: 1, justifyContent: "flex-end", overflow: "hidden" },
@@ -65,7 +70,7 @@ export function TurnList({ maxRows = 20 }: { maxRows?: number }) {
       React.createElement(Turn, {
         key: turn.id,
         turn,
-        isLast: i === lastIndex,
+        isLast: i === lastIndex && scrollOffset === 0,
       }),
     ),
   );
