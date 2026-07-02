@@ -9,6 +9,7 @@ import { Text, Box } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 import { useChatStore } from "../stores/chat-store";
 import { Spinner } from "./Spinner";
+import { useStalledAnimation } from "../hooks/use-stalled-animation";
 import { FinalBlock } from "./blocks/FinalBlock";
 import { ReasoningBlock } from "./blocks/ReasoningBlock";
 import { ToolBlock } from "./blocks/ToolBlock";
@@ -22,8 +23,12 @@ function formatTime(ts: number): string {
 export const Turn = React.memo(function Turn({ turn, isLast }: { turn: TurnType; isLast: boolean }) {
   const c = useThemeStore((s) => s.theme).colors;
   const isGenerating = useChatStore((s) => s.isGenerating);
+  const lastTokenMs = useChatStore((s) => s.lastTokenMs);
   const isStreaming = isGenerating && isLast && turn.status === "streaming";
   const [badgeExpanded, setBadgeExpanded] = useState(false);
+
+  // stalled 检测:仅当前正在流式的 Turn 检测
+  const stalledIntensity = useStalledAnimation(isStreaming, isStreaming ? lastTokenMs : null);
 
   // 用户消息
   const userTime = formatTime(turn.userMessage.timestamp);
@@ -33,7 +38,7 @@ export const Turn = React.memo(function Turn({ turn, isLast }: { turn: TurnType;
     ? React.createElement(
         Box,
         { flexDirection: "row" },
-        React.createElement(Spinner, { active: true }),
+        React.createElement(Spinner, { active: true, stalledIntensity }),
         React.createElement(Text, { color: c.textDim }, ` 第${turn.turnId + 1}轮 · 生成中...`),
       )
     : React.createElement(

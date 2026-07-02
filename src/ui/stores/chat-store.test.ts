@@ -5,7 +5,7 @@ function freshState(): ChatState {
   return {
     turns: [], currentTurnId: null, isGenerating: false, statusText: "",
     notifications: [], debugMode: false, pendingToolCalls: new Map(),
-    turnStartMs: null, nextTurnId: 0, nextBlockId: 0,
+    turnStartMs: null, lastTokenMs: null, nextTurnId: 0, nextBlockId: 0,
   };
 }
 

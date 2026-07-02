@@ -52,6 +52,7 @@ export interface ChatState {
   debugMode: boolean;
   pendingToolCalls: Map<string, string>; // callId -> blockId
   turnStartMs: number | null;
+  lastTokenMs: number | null; // 最近一次 text_delta 的时间(ms)，用于 stalled 检测
   nextTurnId: number;
   nextBlockId: number;
 }
@@ -65,6 +66,7 @@ const initialState: ChatState = {
   debugMode: false,
   pendingToolCalls: new Map(),
   turnStartMs: null,
+  lastTokenMs: null,
   nextTurnId: 0,
   nextBlockId: 0,
 };
@@ -145,8 +147,9 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
       const turn = getCurrentTurn(state);
       if (!turn) return state;
       const lastFinalIdx = lastBlockIndexOf(turn, "final");
+      const withToken = { ...state, lastTokenMs: Date.now() };
       if (lastFinalIdx !== -1 && turn.blocks[lastFinalIdx].status === "streaming") {
-        return updateCurrentTurn(state, (t) => {
+        return updateCurrentTurn(withToken, (t) => {
           const blocks = t.blocks.slice();
           blocks[lastFinalIdx] = {
             ...blocks[lastFinalIdx],
@@ -156,7 +159,7 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         });
       }
       // 无 final 块（或已完成）→ 创建新的 streaming final 块
-      const { id, state: nextState } = nextBlockIdState(state);
+      const { id, state: nextState } = nextBlockIdState(withToken);
       const block: Block = {
         id,
         type: "final",
@@ -290,6 +293,7 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         currentTurnId: null, // turn 已关闭
         pendingToolCalls: new Map(),
         turnStartMs: null,
+        lastTokenMs: null,
         statusText: `第${event.turnId}轮 ${elapsedSec}秒 ${event.totalTokens}词`,
       };
     }
