@@ -1,10 +1,10 @@
 /**
  * 仪表盘 — 精简/调试双模式。
  * 默认精简:3 核心指标(情绪 PAD + 饱和 + 调节) + 1 关系图。
- * 调试模式(Ctrl+G 或 /debug):展开内心/关系双列全量分区。
+ * 调试模式(/debug 命令):展开内心/关系双列全量分区。
  */
 import React from "react";
-import { Text, Box, useInput } from "ink";
+import { Text, Box } from "ink";
 import { useThemeStore } from "../stores/theme-store";
 import { useChatStore } from "../stores/chat-store";
 import { useAgentStore } from "../stores/agent-store";
@@ -22,13 +22,6 @@ export function Dashboard() {
   const c = useThemeStore((s) => s.theme).colors;
   const debugMode = useChatStore((s) => s.debugMode);
   const snap = useAgentStore((s) => s.snapshot);
-
-  // Ctrl+G 切换调试/精简模式
-  useInput((input, key) => {
-    if (input === "g" && key.ctrl) {
-      useChatStore.getState().toggleDebugMode();
-    }
-  });
 
   if (debugMode) {
     // 全量双列模式(现有布局)
