@@ -9,6 +9,7 @@ import { useAgentStore } from "./stores/agent-store";
 import { useThemeStore } from "./stores/theme-store";
 import { useTurnStream } from "./hooks/use-turn-stream";
 import { MainLayout } from "./components/MainLayout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function AppInner() {
   const { exit } = useApp();
@@ -67,14 +68,22 @@ function AppInner() {
     return React.createElement(Text, { color: "red" }, `初始化失败: ${bootError}`);
   }
 
-  return React.createElement(MainLayout, {
-    notifications,
-    onSubmit: wrappedSubmit,
-    disabled: isGenerating,
-    agentName,
-  });
+  return React.createElement(
+    ErrorBoundary,
+    { area: "主界面" },
+    React.createElement(MainLayout, {
+      notifications,
+      onSubmit: wrappedSubmit,
+      disabled: isGenerating,
+      agentName,
+    }),
+  );
 }
 
 export function App() {
-  return React.createElement(AppInner, null);
+  return React.createElement(
+    ErrorBoundary,
+    { area: "界面" },
+    React.createElement(AppInner, null),
+  );
 }
