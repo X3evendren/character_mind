@@ -19,7 +19,7 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function Turn({ turn, isLast }: { turn: TurnType; isLast: boolean }) {
+export const Turn = React.memo(function Turn({ turn, isLast }: { turn: TurnType; isLast: boolean }) {
   const c = useThemeStore((s) => s.theme).colors;
   const isGenerating = useChatStore((s) => s.isGenerating);
   const isStreaming = isGenerating && isLast && turn.status === "streaming";
@@ -109,4 +109,4 @@ export function Turn({ turn, isLast }: { turn: TurnType; isLast: boolean }) {
         : null,
     ),
   );
-}
+});
