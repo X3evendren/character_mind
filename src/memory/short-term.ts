@@ -28,10 +28,15 @@ export class ShortTermMemory extends MemoryStore {
       memory_type TEXT DEFAULT 'episodic', confidence REAL DEFAULT 0.7,
       superseded INTEGER DEFAULT 0, superseded_by TEXT, embedding BLOB
     )`);
-    this._db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS stm_fts USING fts5(
-      content, event_type, tags, content=stm, content_rowid=rowid,
-      tokenize='trigram'  -- trigram works for CJK + Latin languages
-    )`);
+    try {
+      this._db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS stm_fts USING fts5(
+        content, event_type, tags, content=stm, content_rowid=rowid,
+        tokenize='trigram'  -- trigram works for CJK + Latin languages
+      )`);
+    } catch {
+      // FTS5 not available (e.g. stock better-sqlite3 on Windows).
+      // recall() falls back to LIKE-based search — no data loss.
+    }
   }
 
   setEmbeddingFn(fn: (text: string) => number[]): void { this._embeddingFn = fn; }

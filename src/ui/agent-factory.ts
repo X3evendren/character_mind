@@ -48,7 +48,9 @@ export async function createAgent(env: CreateAgentEnv): Promise<CreatedAgent> {
   const model = env.model ?? process.env.GEN_MODEL ?? "LongCat-2.0";
 
   const spec = selectProviderSpec({ apiKey, baseUrl, model });
-  const isAnthropic = spec?.backend === "anthropic";
+  // Auto-detect Anthropic backend: URL contains /anthropic path
+  const isAnthropic = spec?.backend === "anthropic"
+    || baseUrl.includes("/anthropic");
 
   const provider = isAnthropic
     ? new AnthropicProvider(model, apiKey, baseUrl)
