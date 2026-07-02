@@ -143,21 +143,20 @@ export function InputArea({
       category: trigger?.category,
     }),
 
-    // Multiline editor
-    React.createElement(MultilineEditor, {
-      onSubmit: handleSubmit,
-      onTextChange: handleTextChange,
-      maxLines: 5,
-      placeholder,
-      disabled,
-    }),
+    // Input frame with top border
+    React.createElement(Text, { color: theme.colors.primary },
+      "┌" + "─".repeat(40) + "┤"),
 
-    // URL preview bar (shown when a URL is detected in text)
+    // Multiline editor inside frame
     React.createElement(Box, { flexDirection: "row" },
-      React.createElement(Text, { color: theme.colors.textDim }, "─".repeat(4), " "),
-      React.createElement(Text, { color: theme.colors.textDim },
-        text ? `光标位置 · ${text.length} 字符` : placeholder,
-      ),
+      React.createElement(Text, { color: theme.colors.primary }, "│ "),
+      React.createElement(MultilineEditor, {
+        onSubmit: handleSubmit,
+        onTextChange: handleTextChange,
+        maxLines: 5,
+        placeholder,
+        disabled,
+      }),
     ),
   );
 }

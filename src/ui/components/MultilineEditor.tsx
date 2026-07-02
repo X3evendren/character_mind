@@ -84,7 +84,7 @@ export function MultilineEditor({
       notifyTextChange(next);
       return next;
     });
-    setCursorCol(c => c + 1);
+    setCursorCol(c => c + char.length);
   }, [cursorCol, cursorLine, notifyTextChange]);
 
   const handleBackspace = useCallback(() => {
