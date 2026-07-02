@@ -143,13 +143,13 @@ export function InputArea({
       category: trigger?.category,
     }),
 
-    // Input frame with top border
-    React.createElement(Text, { color: theme.colors.primary },
-      "┌" + "─".repeat(40) + "┤"),
-
-    // Multiline editor inside frame
-    React.createElement(Box, { flexDirection: "row" },
-      React.createElement(Text, { color: theme.colors.primary }, "│ "),
+    // True bordered input box (rounded corners, primary-colored frame)
+    React.createElement(Box, {
+      borderStyle: "round" as const,
+      borderColor: theme.colors.primary,
+      flexDirection: "column",
+      paddingX: 1,
+    },
       React.createElement(MultilineEditor, {
         onSubmit: handleSubmit,
         onTextChange: handleTextChange,
@@ -158,5 +158,9 @@ export function InputArea({
         disabled,
       }),
     ),
+
+    // Footer hint (below border, dim)
+    React.createElement(Text, { color: theme.colors.textDim, dimColor: true },
+      "  Enter 发送 · Alt+Enter 换行"),
   );
 }
