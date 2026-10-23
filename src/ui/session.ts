@@ -12,13 +12,40 @@ export class WorkspaceSession {
   private compression: Promise<void> | null = null;
   private closing: Promise<void> | null = null;
   private disposed = false;
+  private lastActivity = Date.now();
+  private draftPresent = false;
+  private proactive = false;
+  private initiativeEnabled = true;
+  private readonly timer: ReturnType<typeof setInterval>;
 
-  constructor(readonly agent: AgentPort) { registerBuiltinCommands(); }
+  constructor(readonly agent: AgentPort) {
+    registerBuiltinCommands();
+    this.timer = setInterval(() => { void this.pollInitiative(); }, 10000);
+    this.timer.unref();
+  }
+
+  markActivity(draftPresent?: boolean): void {
+    this.lastActivity = Date.now();
+    if (draftPresent !== undefined) this.draftPresent = draftPresent;
+    if (this.proactive) this.cancel();
+  }
+
+  async pollInitiative(now = Date.now()): Promise<void> {
+    const ui = useWorkspaceStore.getState();
+    if (this.disposed || !this.initiativeEnabled || this.active || this.compression || this.draftPresent || ui.view !== 'chat' || ui.permission || now - this.lastActivity < 90000) return;
+    if (!this.agent.runInitiative || !this.agent.getInitiative?.(now)) return;
+    this.proactive = true; this.abort = new AbortController();
+    useChatStore.getState().beginInitiative();
+    this.active = this.consume('', this.abort.signal, true);
+    try { await this.active; } finally { this.active = null; this.abort = null; this.proactive = false; this.lastActivity = Date.now(); }
+  }
 
   cancel(): void { this.abort?.abort(new Error('用户取消')); }
 
   async submit(raw: string): Promise<void> {
     if (this.disposed) return;
+    this.markActivity(false);
+    if (this.proactive) await this.active;
     let text = raw.trim();
     if (!text) return;
     const chat = useChatStore.getState();
@@ -28,6 +55,11 @@ export class WorkspaceSession {
       if (parsed) {
         const { name, args } = parsed;
         if (name === 'stop') { this.cancel(); return; }
+        if (name === 'initiative') {
+          if (args && !['on','off','status'].includes(args)) throw new Error('用法：/initiative on|off|status');
+          if (args === 'on' || args === 'off') this.initiativeEnabled = args === 'on';
+          useWorkspaceStore.setState({ notice: `主动表达已${this.initiativeEnabled ? '开启' : '关闭'}；有动机且空闲时才会发言。` }); return;
+        }
         if (name === 'clear') {
           if (this.active) { useWorkspaceStore.setState({ notice: '请先按 Esc 结束当前回合，再清屏。' }); return; }
           chat.clearMessages(); ui.setView('chat'); return;
@@ -61,11 +93,12 @@ export class WorkspaceSession {
     }
   }
 
-  private async consume(text: string, signal: AbortSignal): Promise<void> {
+  private async consume(text: string, signal: AbortSignal, initiative = false): Promise<void> {
     const chat = useChatStore.getState();
     let completed = false;
     try {
-      for await (const event of this.agent.runStream(text, { signal })) {
+      const stream = initiative ? this.agent.runInitiative!({ signal }) : this.agent.runStream(text, { signal });
+      for await (const event of stream) {
         chat.dispatchEvent(event);
         if (event.type === 'done' || event.type === 'phase_end') useAgentStore.getState().refreshNow();
         if (event.type === 'done') {
@@ -103,7 +136,7 @@ export class WorkspaceSession {
 
   close(): Promise<void> {
     if (this.closing) return this.closing;
-    this.disposed = true; this.cancel();
+    this.disposed = true; clearInterval(this.timer); this.cancel();
     this.closing = (async () => {
       await this.active; await this.compression;
       await this.agent.shutdown();

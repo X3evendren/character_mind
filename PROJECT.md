@@ -1,27 +1,28 @@
-# 项目导航
-
-当前设计以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准，启动和验证方式见 [README.md](./README.md)。
+# 源码导航
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/memory/knowledge-graph.ts` | 实体、事件、关系、过程、现象、决策和摘要的单一图谱，检索与展开 |
-| `src/memory/import-legacy.ts` | 只读导入旧 SQLite 记录 |
-| `src/mind/cognitive-core.ts` | 证据去重、情境信念、过程动力学、记忆激活、策略评分与持久化 |
-| `src/mind/process-state.ts` | 底层连续过程与有来源的记忆激活契约 |
-| `src/mind/phenomena.ts` | 统一现象推断接口、证据、强度与生命周期 |
-| `src/mind/appraisal-provider.ts` | LLM 结构化情境评估适配器 |
-| `src/agent/agent.ts` | 串行认知流程与稳定边界压缩 |
-| `src/agent/response-generator.ts` | 回应生成与工具结果回传 |
-| `src/ui/components/MainLayout.tsx` | 四视图布局、Unicode 输入、按键、滚动与缩放 |
-| `src/ui/presentation.ts` | 对话、心智、图谱与来源的行视图 |
-| `src/ui/session.ts` | 回合取消、命令、压缩排队与退出保存 |
-| `src/ui/tool-confirmation.ts` | Ink 内工具授权与取消处理 |
-| `src/commands/builtin/memory.ts` | `/compress` 与 `/expand` |
-| `tests/cognition.test.ts` | 核心状态、来源、压缩、迁移、LLM 结构化契约测试 |
-| `tests/cognitive-integration.test.ts` | 真实入口结合模拟提供者的集成测试 |
-| `src/ui/workspace.test.tsx` | 实际 Ink 渲染、输入、取消、工具确认与生命周期测试 |
-| `tests/live-smoke.ts` | 使用真实模型验证 TUI、记忆、压缩和重启的显式测试 |
+| `config/character.md` | 林雨的人格、目标权重、反应性、时间尺度与决策参数 |
+| `src/mind/profile.ts` | 参数默认值、值域与严格校验 |
+| `src/mind/appraisal.ts` | 目标评估、关系证据、修复、体验、行动预测契约 |
+| `src/mind/appraisal-provider.ts` | LLM 结构化评估与一次纠正 |
+| `src/mind/process-state.ts` | v3 统一过程状态、关系信念与正负感受 |
+| `src/mind/cognitive-core.ts` | 事件、证据更新、情绪、记忆、调节、决策与快照 |
+| `src/mind/neuromodulation.ts` | 奖赏误差、动机、警觉、社会显著性与共同计算增益 |
+| `src/mind/motivation.ts` | 需要、信息收益、后果预测、策略评分与 TD 学习 |
+| `src/mind/phenomena.ts` | 通用现象读出、来源和生命周期 |
+| `src/memory/knowledge-graph.ts` | 单一图谱、关系查询、摘要与原文展开 |
+| `src/memory/import-legacy.ts` | 旧 SQLite 只读导入 |
+| `src/agent/agent.ts` | 串行对话、主动回应、生成控制和稳定边界压缩 |
+| `src/agent/response-controller.ts` | 动态采样、长度预算、候选排序与降级 |
+| `src/agent/response-generator.ts` | 提供者流式适配、工具续轮、截断和 usage |
+| `src/ui/session.ts` | 会话、主动时机、草稿避让、取消与保存 |
+| `src/ui/presentation.ts` | 四视图、动力学读数、学习与控制来源 |
+| `tests/dynamics.test.ts` | 统一回路、参数影响、反馈、主动性、生成与重启边界 |
+| `tests/cognition.test.ts` | 来源、现象、迁移、压缩和评估协议 |
+| `tests/cognitive-integration.test.ts` | 完整入口、工具结果、取消、压缩和错误恢复 |
+| `src/ui/workspace.test.tsx` | 实际 Ink 渲染、键盘、会话与主动行为 |
+| `tests/live-smoke.ts` | 真实模型 TUI、回忆、压缩与重启 |
+| `tests/live-affect.ts` | 真实模型情感冲突、修复与候选选择 |
 
-`guard`、`tools`、`providers`、`channels`、`mcp`、`plugin`、`subagent`、`cron`、`eval`、`telemetry` 保留各自基础设施职责。当前运行入口为 `src/dev-entry.ts` → `src/ink-main.tsx` → `src/ui/app.tsx`。
-
-旧五层存储、冷热分析、自发意识流控制器、重复心理参数系统、未调用的 ACT-R／倒 U 情绪衰减工具和旧 readline 入口已移除。旧设计与当前实现的对应关系见架构文档。
+入口为 `src/dev-entry.ts` → `src/ink-main.tsx` → `src/ui/app.tsx`。默认 DeepSeek；通用工具需 `CHARACTER_TOOLS=1` 显式开启。`providers`、`mcp`、`channels`、`plugin`、`subagent`、`cron` 是保留但未默认装配的基础设施，其审计和清理不属于本次核心动力学验收。

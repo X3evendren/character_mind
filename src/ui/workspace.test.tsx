@@ -19,6 +19,7 @@ import { wrapText, safeText, cellWidth, sliceRows } from './text';
 import { markdownRows, memoryNodes, memoryRows, mindRows } from './presentation';
 import { confirmTool } from './tool-confirmation';
 import { loadThemeFile, saveThemeFile } from './theme/loader';
+import { assessment, neutralGoals } from '../../tests/fixtures/appraisal';
 
 function fixture(overrides: Record<string, unknown> = {}) {
   const provider = {
@@ -30,12 +31,43 @@ function fixture(overrides: Record<string, unknown> = {}) {
   return new CharacterAgent({ configDir: './config', dataDir: mkdtempSync(join(tmpdir(), 'tui-test-')),
     genProvider: provider as any, psychProvider: provider as any,
     guardPipeline: new GuardPipeline([]), toolRegistry: new ToolRegistry(),
-    appraisalProvider: { assess: async () => ({ distribution: { safe: .1, threat: .7, loss: .1, repair: .05, uncertain: .05 }, reliability: .7,
+    candidateSelection: false, appraisalProvider: { assess: async () => assessment({ reliability: .7,
       structure: ['conflict_unresolved', 'departure'], contextBinding: .2, controllability: .3, evidence: '事件的主观理解',
       relations: [{ subject: 'user', predicate: '离开', object: 'self' }] }) }, ...overrides });
 }
 
 const cleanups: Array<() => void | Promise<void>> = [];
+describe('motivated initiative in the workspace', () => {
+  it('respects drafts, view, opt out and emits an actual initiative only once', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const agent = fixture({ appraisalProvider: { assess: async () => assessment({ goalImpact: { ...neutralGoals, connection: .8, curiosity: 1 }, novelty: 1, anticipated: true, reliability: 1 }) } });
+    await agent.run('一起探索新作品');
+    const session = new WorkspaceSession(agent); cleanups.push(() => session.close());
+    const later = () => vi.setSystemTime(Date.now() + 120000);
+    session.markActivity(true); later(); await session.pollInitiative();
+    expect(agent.graph.all('event')).toHaveLength(2);
+    session.markActivity(false); later();
+    useWorkspaceStore.setState({ view: 'mind' }); await session.pollInitiative();
+    expect(agent.graph.all('event')).toHaveLength(2);
+    useWorkspaceStore.setState({ view: 'chat' }); await session.submit('/initiative off'); later(); await session.pollInitiative();
+    expect(agent.graph.all('event')).toHaveLength(2);
+    await session.submit('/initiative on'); later(); await session.pollInitiative();
+    expect(agent.graph.all('event')).toHaveLength(3);
+    expect(useChatStore.getState().turns.at(-1)?.kind).toBe('initiative');
+    expect(agent.graph.all('appraisal')).toHaveLength(1);
+    later(); await session.pollInitiative(); expect(agent.graph.all('event')).toHaveLength(3);
+  });
+  it('typing cancels an initiative before it is committed and preserves the next user turn', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const agent = fixture({ appraisalProvider: { assess: async () => assessment({ goalImpact: { ...neutralGoals, curiosity: 1, connection: .9 }, novelty: 1, anticipated: true, reliability: 1 }) } });
+    await agent.run('共同的话题'); const session = new WorkspaceSession(agent); cleanups.push(() => session.close());
+    vi.setSystemTime(Date.now() + 120000);
+    const run = session.pollInitiative(); session.markActivity(true); await run;
+    expect(agent.graph.all('event')).toHaveLength(2);
+    expect(useChatStore.getState().turns.at(-1)?.status).toBe('interrupted');
+    await session.submit('我还在输入'); expect(agent.graph.all('event')).toHaveLength(4);
+  });
+});
 beforeEach(() => {
   useAgentStore.getState().setAgent(null);
   useChatStore.setState({ isGenerating: false }); useChatStore.getState().clearMessages();
@@ -154,7 +186,7 @@ describe('actual Ink rendering and keyboard input', () => {
     term.send('你好'); await vi.waitFor(() => expect(term.last()).toContain('› 你好'));
     term.send('\r'); await vi.waitFor(() => expect(term.last()).toContain('我记得你的话。'), { timeout: 5000 });
     expect(agent.graph.all('event')).toHaveLength(2);
-    term.send('\t'); await vi.waitFor(() => expect(term.last()).toContain('主观情境信念'));
+    term.send('\t'); await vi.waitFor(() => expect(term.last()).toContain('关系信念'));
     term.stdout.columns = 46; term.stdout.rows = 16; term.stdout.emit('resize');
     await vi.waitFor(() => expect(term.last().split('\n').every(line => cellWidth(line) <= 46)).toBe(true));
     expect(term.last().trimEnd().split('\n').length).toBeLessThanOrEqual(16);

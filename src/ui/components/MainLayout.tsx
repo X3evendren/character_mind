@@ -30,6 +30,7 @@ export function MainLayout({ session, bootError, onQuit, onRetry }: {
   const snapshot = useAgentStore(s => s.snapshot);
   const ui = useWorkspaceStore();
   const [draft, setDraft] = useState(emptyDraft);
+  useEffect(() => { session?.markActivity(!!draft.text); }, [session, draft.text]);
   const history = useRef(new InputHistory());
   const [offset, setOffset] = useState(0);
   const agent = session?.agent ?? null;
@@ -87,8 +88,9 @@ export function MainLayout({ session, bootError, onQuit, onRetry }: {
     history.current.add(text); replaceDraft(''); setOffset(0);
     void session.submit(text);
   };
-  usePaste(text => { if (!ui.permission) { setDraft(d => insertText(d, text)); history.current.reset(); } });
+  usePaste(text => { session?.markActivity(true); if (!ui.permission) { setDraft(d => insertText(d, text)); history.current.reset(); } });
   useInput((input, key) => {
+    session?.markActivity();
     if (key.ctrl && input === 'c') { onQuit(); return; }
     if (tiny) return;
     if (ui.permission && !key.pageUp && !key.pageDown) {

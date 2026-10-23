@@ -5,7 +5,7 @@ export class ContinuousLoop {
   constructor(private readonly intervalMs = 30000) {}
   start(agent: CharacterAgent): void {
     if (this.timer) return;
-    this.timer = setInterval(() => agent.cognition.advance(), this.intervalMs);
+    this.timer = setInterval(() => agent.tick(), this.intervalMs);
     this.timer.unref();
   }
   stop(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }

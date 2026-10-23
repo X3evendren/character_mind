@@ -8,12 +8,8 @@ import { CognitiveCore, validateAppraisal, type Appraisal } from '../src/mind/co
 import { LanguageAppraisalProvider } from '../src/mind/appraisal-provider.ts';
 import { importLegacyMemory } from '../src/memory/import-legacy.ts';
 import { inferPhenomena, type PhenomenonRule } from '../src/mind/phenomena.ts';
+import { assessment, neutralGoals } from './fixtures/appraisal.ts';
 
-const assessment = (overrides: Partial<Appraisal> = {}): Appraisal => ({
-  distribution: { safe: .01, threat: .8, loss: .17, repair: .01, uncertain: .01 },
-  reliability: .8, structure: ['conflict_unresolved', 'departure'],
-  contextBinding: .9, controllability: .8, evidence: '模型推断：未解决冲突后离开', ...overrides,
-});
 function episode(core: CognitiveCore, text: string, appraisal = assessment(), now = 1) {
   const event = core.observe(text, 'user', now);
   core.appraise(event.id, appraisal, now);
@@ -42,10 +38,10 @@ test('same evidence is counted once even after restart', () => {
 test('contextual appraisals distinguish identical words', () => {
   const safe = new CognitiveCore(new KnowledgeGraph(), 0);
   const threatened = new CognitiveCore(new KnowledgeGraph(), 0);
-  episode(safe, '我先走了', assessment({ distribution: { safe: .9, threat: .01, loss: .01, repair: .07, uncertain: .01 }, structure: ['return_promised', 'departure'] }));
+  episode(safe, '我先走了', assessment({ goalImpact: { ...neutralGoals, connection: .4 }, structure: ['return_promised', 'departure'] }));
   episode(threatened, '我先走了');
   assert.ok(safe.state.valence > threatened.state.valence);
-  assert.ok(safe.state.belief.safe > threatened.state.belief.safe);
+  assert.ok(safe.state.motivation.satisfaction.connection > threatened.state.motivation.satisfaction.connection);
 });
 test('structural recurrence triggers affect with provenance across different wording', () => {
   const core = new CognitiveCore(new KnowledgeGraph(), 0);
@@ -96,7 +92,7 @@ test('long stress sequences remain bounded and normalized', () => {
   const core = new CognitiveCore(new KnowledgeGraph(), 0);
   for (let i=1; i<=150; i++) episode(core, '持续冲突', assessment({ contextBinding: .05, controllability: .05 }), i);
   const s = core.state;
-  assert.ok(Math.abs(Object.values(s.belief).reduce((x,y)=>x+y,0)-1) < 1e-10);
+  assert.ok(Object.values(s.belief).every(b => Number.isFinite(b.alpha) && Number.isFinite(b.beta) && b.alpha > 0 && b.beta > 0));
   for (const v of [s.arousal,s.affectAccess,s.selfContinuity,s.contextBinding,s.agency,...core.phenomena.map(p=>p.intensity)]) assert.ok(Number.isFinite(v) && v>=0 && v<=1);
   assert.ok(core.decide(core.graph.all('event').at(-1)!.id).some(x => x.policy === 'ground'));
 });
@@ -119,7 +115,7 @@ test('detachment needs experience evidence, not low agency, neutral affect or th
   const core = new CognitiveCore(new KnowledgeGraph(), 0);
   episode(core, '控制不了局面', assessment({ controllability: 0, contextBinding: 0 }), 1);
   assert.ok(!core.phenomena.some(p => p.kind === 'dissociative_detachment'));
-  episode(core, '中性输入', assessment({ distribution: { safe: .2, threat: .2, loss: .2, repair: .2, uncertain: .2 }, structure: [] }), 2);
+  episode(core, '中性输入', assessment({ goalImpact: neutralGoals, structure: [] }), 2);
   assert.ok(!core.phenomena.some(p => p.kind === 'dissociative_detachment'));
   episode(core, '我知道这是现在，但像隔着玻璃感受自己', assessment({ contextBinding: 1,
     experience: { affectAccess: .05, selfContinuity: .05, evidence: '角色自述感受隔膜与自身疏离，仍知道自己在当下' } }), 3);
@@ -132,11 +128,11 @@ test('detachment needs experience evidence, not low agency, neutral affect or th
 test('generic phenomenon rules share an episode lifecycle and cannot mutate process state', () => {
   const state = new CognitiveCore(new KnowledgeGraph(), 0).state;
   const rule: PhenomenonRule = { kind: 'test_curiosity', label: '好奇', version: 'test-v1', evaluate(s) {
-    s.belief.safe = 0; // Deliberately mutate the isolated input, not the core.
+    s.belief.goodwill.alpha = 0; // Deliberately mutate the isolated input, not the core.
     return { intensity: s.arousal, support: 1, sourceEventIds: [], factors: { arousal: s.arousal }, basis: ['test'], regulationDemand: 0 };
   } };
   const first = inferPhenomena(state, [], [rule]);
-  assert.equal(state.belief.safe, .2);
+  assert.equal(state.belief.goodwill.alpha, 1);
   assert.equal(first[0].status, 'active');
   const fading = inferPhenomena({ ...state, at: 1, arousal: .02 }, first, [rule]);
   assert.equal(fading[0].id, first[0].id); assert.equal(fading[0].status, 'fading');
@@ -241,7 +237,7 @@ test('compressed old memory can be retrieved in Chinese and nested summaries avo
   assert.ok(!context.some((n:any)=>n.id===summary.id));
 });
 test('invalid model output cannot mutate beliefs', async () => {
-  assert.throws(()=>validateAppraisal(assessment({ distribution: { safe: -1, threat: 2, loss: 0, repair: 0, uncertain: 0 } })));
+  assert.throws(()=>validateAppraisal(assessment({ goalImpact: { ...neutralGoals, connection: 2 } })));
   const provider = new LanguageAppraisalProvider({ chat: async()=>({content:'not JSON'}) } as any);
   await assert.rejects(provider.assess('hello','[]'));
 });

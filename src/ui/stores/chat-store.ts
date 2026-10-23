@@ -31,7 +31,7 @@ export interface Block {
 
 export interface Turn {
   id: string;
-  kind?: 'dialogue' | 'command';
+  kind?: 'dialogue' | 'command' | 'initiative';
   turnId: number;
   userMessage: { content: string; timestamp: number };
   blocks: Block[];
@@ -248,6 +248,7 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
 interface ChatStore extends ChatState {
   dispatchEvent: (event: TurnEvent) => void;
   submitUserMessage: (text: string) => void;
+  beginInitiative: () => void;
   setTurnStateBadge: (mind: AgentSnapshot['mind']) => void;
   clearMessages: () => void;
   toggleDebugMode: () => void;
@@ -265,6 +266,10 @@ export const useChatStore = create<ChatStore>((set) => ({
     }].slice(-MAX_TURNS),
   })),
   dispatchEvent: (event) => set((state) => reduceTurnEvent(state, event)),
+  beginInitiative: () => set(state => {
+    const id = turnId(), now = Date.now();
+    return { turns: [...state.turns, { id, kind: 'initiative' as const, turnId: nextDisplayTurnId++, userMessage: { content: '', timestamp: now }, blocks: [], status: 'streaming' as const, timestamp: now }].slice(-MAX_TURNS), currentTurnId: id, isGenerating: true };
+  }),
   submitUserMessage: (text) =>
     set((state) => {
       const id = turnId();

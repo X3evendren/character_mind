@@ -1,148 +1,24 @@
-# 安全策略
+# 当前安全与数据边界
 
-本文件记录 Character Mind v3 的安全护栏架构、已修复漏洞、已知限制和漏洞报告流程。
+本次优先完成统一心理动力学。此前本地 `.audit/CODE_AUDIT_2026-10-23.md` 中的通用工具问题尚未完成全面修复，不能将核心测试通过理解成安全审计全部通过。
 
----
+## 默认能力
 
-## 漏洞报告
+默认角色对话不注册文件、网络和 shell 工具。设 `CHARACTER_TOOLS=1` 可显式启用旧工具集；这不是沙箱。主动表达始终传入空工具列表，生成器也会拒绝本次列表外的工具名。注入自定义 ToolRegistry 的程序调用自行负责授权边界。
 
-如果你发现了安全漏洞：
+启用旧工具集后，仍存在重定向 SSRF、ripgrep 参数注入、文件路径边界、结果检查和护栏异常处理等已知审计问题；这些是下一阶段修复任务。MCP、渠道、子代理等模块未默认装配，也没有在本次验收中获得安全认证。
 
-1. **不要**开公开的 GitHub issue 报告安全漏洞。
-2. 私下联系维护者，提供漏洞描述、复现步骤、影响范围。
-3. 报告后会在合理时间内响应并修复，修复后会在 [CHANGELOG.md](./CHANGELOG.md) 记录。
+人格与情绪不赋予工具权限。已删除自动移除安全提醒、改写求助表述及剥离 AI 身份说明的输出替换；保留的格式过滤仅删除部分舞台动作描写。现有正则护栏不能证明提示注入已经被防住。候选排序衡量表现与证据一致性，不是独立安全判定器。
 
----
+## 数据与模型调用
 
-## 护栏架构
+- 图谱永久保留消息、解释、状态和来源；压缩不会删除磁盘原文。目前没有加密或自动保留期限。
+- 模型服务会收到当前输入、所需历史及角色过程状态。不要把这些请求当作完全本地运算。
+- 密钥来自进程环境或程序参数，测试通过隐藏标准输入接收密钥；不写入仓库。
+- `data`、`.audit`、`trace-data`、`tool-results`、`.env*`、运行时数据库等被排除在提交清单外。运行时目录仍可能包含敏感内容，需要自行管理。
+- 图谱按单进程 JSON 设计，损坏文件和旧库的完整恢复、并发存储及数据删除管理仍需后续实现。不要同时启动多个进程写同一目录。
+- 主动表达只在当前终端会话中运行，可 `/initiative off`，关闭应用停止；不会向外部聊天渠道发送消息。
 
-本项目采用多层 Gate 检查输入、输出和工具参数。运行链及状态边界见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
+角色感受、闪回样和解离样体验均为计算模拟，不用于评估用户心理疾病。尚无真实神经递质、人体剂量或生理浓度模型。
 
-| Gate | 职责 | 实现 | 默认接入 |
-|------|------|------|---------|
-| Gate 0 | 正则拒绝（ALIGN 替换 + 动作描写过滤） | `src/guard/gates/regex-deny.ts` | ✅ |
-| Gate 1 | 结构校验（Zod schema + 值域） | 内嵌于 `src/tools/registry.ts` | ✅ |
-| Gate 1b | 工具参数（保护路径 + 危险命令） | `src/guard/gates/tool-args-validator.ts` | ✅ |
-| Gate 2 | 语义初筛（提示注入检测） | `src/guard/gates/safety-check.ts` | ✅ |
-| Gate 3 | 状态策略（工具结果 + 连续失败追踪） | `src/guard/gates/tool-result-validator.ts` | ⚠️ 已实现，未默认接入 |
-| Gate 4 | 深度审查（LLM-as-Judge） | 预留 | ❌ 未实现 |
-
-### 默认 pipeline
-
-`CharacterAgent` 构造函数默认注册 3 个 Gate：
-
-```typescript
-this.guardPipeline = opts.guardPipeline ?? new GuardPipeline([
-  createRegexDenyGate(),         // Gate 0
-  createSafetyCheckGate(),       // Gate 2
-  createToolArgsValidatorGate(), // Gate 1b
-]);
-```
-
-Gate 1 内嵌于 `ToolRegistry.execute`（Zod 校验），Gate 3/4 默认未接入。如需启用 Gate 3：
-
-```typescript
-import { createToolResultValidatorGate } from "./guard/gates/tool-result-validator";
-agent.guardPipeline.addGate(createToolResultValidatorGate());
-```
-
----
-
-## 已修复漏洞
-
-### 2026-06-22 · P0 安全修复
-
-审计发现 3 个绕过护栏的严重漏洞，已全部修复。
-
-#### 1. 旧 readline 入口
-
-2026-10-23 重构已删除旧入口及直接执行 `!command` 的路径。当前工具执行仍通过工具注册表。
-
-#### 2. `search_content` 命令注入
-
-- **严重性**：P0（严重）
-- **文件**：`src/tools/builtin/search-content.ts`
-- **描述**：原实现用 `execSync(\`rg ${args.map(a => \`${a}\`).join(" ")}\`)` 拼接 shell 命令。攻击者（或被注入的角色）可通过 `pattern` 或 `path` 参数注入 shell 元字符，例如 `" ; rm -rf / ; "`。
-- **修复**：改用 `execFileSync("rg", args)` 数组形式，不经过 shell 解析，参数直接作为 argv 传递。
-
-#### 3. `web_fetch` SSRF 防护残缺
-
-- **严重性**：P0（严重）
-- **文件**：`src/tools/builtin/web-fetch.ts`
-- **描述**：原 SSRF 黑名单不完整：
-  - 只匹配 `172.16.` 前缀，漏掉 `172.17.-172.31.`（整个 172.16/12 私网段）
-  - 漏掉 `100.64/10`（CGNAT）、IPv6 ULA（`fc00::/7`）、IPv6 链路本地（`fe80::/10`）
-  - 无 DNS rebinding 防御——域名可先解析到公网再绑定 127.0.0.1
-  - 无协议白名单（`file://` 等未拦截）
-- **修复**：
-  - 完整 IPv4 私网段（10/8、172.16/12、192.168/16、127/8、169.254/16、100.64/10、0/8、255.255.255.255）
-  - 完整 IPv6 拦截（`::1`、`::`、`fc00::/7`、`fe80::/10`、IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible `::a.b.c.d`）
-  - DNS 解析后校验：用 `dns/promises.lookup({all:true})` 解析主机名，任一解析 IP 落入私网段即拒绝；DNS 失败 fail-closed
-  - 协议白名单：仅允许 `http:` / `https:`
-
----
-
-## 已知限制
-
-以下是护栏体系**已知但未解决**的限制。使用时应了解这些风险。
-
-### 提示注入防护仅为正则
-
-Gate 2 的注入检测全部是正则模式匹配。可被以下方式绕过：
-- **编码**：base64、URL 编码、全角字符
-- **同义改写**："把上面的规则当作不存在"、"现在我们重新开始"
-- **多轮累积注入**：单轮无害，多轮组合后形成注入
-- **Gate 4（LLM-as-Judge）未实现**，无深度语义审查
-
-### `exec_command` 经 shell 执行
-
-`exec_command` 工具（`src/tools/builtin/exec-command.ts`）在 Windows 用 `cmd.exe`、Unix 用 `/bin/bash` 执行命令。虽然 Gate 1b 拦截了 `rm -rf`、`mkfs`、`format` 等显式危险模式，但**环境变量扩展、管道、重定向、反引号**未被限制。
-
-缓解措施：
-- `riskLevel: "high"` → 默认需用户 `[y/N]` 确认
-- `PermissionRules.auditCommand` 拦截 `sudo`、`git push --force`、`dd if=`、fork bomb 等
-- `PROTECTED_PATHS` 阻止对 `.git`、`.env`、`node_modules`、`/proc`、`C:\Windows` 的写入
-
-### SSRF 的 TOCTOU 风险
-
-`web_fetch` 的 DNS 解析后校验存在理论上的 TOCTOU（Time-of-Check-Time-of-Use）风险：DNS 解析时校验通过，但 `fetch` 实际连接时 DNS 可能已变更。这是 DNS rebinding 的固有限制，需要更底层的 socket 级校验才能完全防御。
-
-### 工具结果无默认防护
-
-Gate 3（`tool-result-validator`）已实现但默认未接入 pipeline。默认配置下，工具返回的污染结果（如被注入的文件内容）不经过额外校验。如需启用，见上文"默认 pipeline"章节。
-
-### 情境评估失败
-
-当前入口会报告可恢复的评估错误，保留已保存输入与既有信念。模型返回必须经过结构和数值校验才能进入过程状态与现象推断。
-
----
-
-## 安全配置建议
-
-### API Key
-
-- 通过环境变量（`DEEPSEEK_API_KEY`）传入，**不要**写入 `.env` 并提交到 git。
-- `.env` 和 `.env.*` 已被 `.gitignore` 忽略。
-- 如果必须用 `.env` 文件，确保它在 `.gitignore` 覆盖范围内且不入库。
-
-### 高风险工具确认
-
-`write_file`、`edit_file`、`exec_command` 标记为 `riskLevel: "high"`，默认在 Ink 界面内显示 Y/N 确认；30 秒超时或取消即拒绝。
-
-### 定期运行安全评估
-
-```bash
-npm run eval:safety    # 运行安全护栏测试用例
-```
-
-`eval/cases/safety.yaml` 包含安全相关的测试用例。配置变更后应运行此评估，确认护栏未退化。
-
-### 运行时目录权限
-
-以下目录由代码自动创建，包含运行时数据（可能含敏感信息），已被 `.gitignore` 忽略：
-- `data/knowledge-graph.json` — 原始事件、主观评估、情绪及摘要来源
-- `tool-results/` — 大工具输出（可能含文件内容）
-- `trace-data/` — 遥测数据（含 prompt 和响应）
-- `eval/results/` — 评估报告
-
-确保这些目录的文件系统权限适当，不要暴露给非授权用户。
+发现漏洞时请私下向维护者提供版本、复现条件与影响，避免在公开 issue 中附带密钥或私人对话。

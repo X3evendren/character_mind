@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { IProvider } from './provider';
-import { loadAssistantConfig } from './config-loader';
+import { loadCharacterConfig } from './config-loader';
+import { responsePlan, selectResponse } from './response-controller';
 import { ResponseGenerator } from './response-generator';
 import type { TurnEvent, RunOptions, RunResult } from './events';
 import { KnowledgeGraph } from '../memory/knowledge-graph.ts';
@@ -23,7 +24,7 @@ export interface AgentHook {
 
 /** Serialized observe → appraise → decide → respond → record pipeline. */
 export class CharacterAgent {
-  readonly config: ReturnType<typeof loadAssistantConfig>;
+  readonly config: ReturnType<typeof loadCharacterConfig>;
   readonly graph: KnowledgeGraph;
   readonly cognition: CognitiveCore;
   readonly toolRegistry: ToolRegistry;
@@ -47,25 +48,27 @@ export class CharacterAgent {
   private lastToolResults: any[] = [];
   private readonly genModel: string;
   private readonly psychModel: string;
+  private readonly candidateSelection: boolean;
 
   constructor(opts: {
     configDir: string; genProvider: IProvider; psychProvider: IProvider;
     genModel?: string; psychModel?: string; fastProvider?: IProvider;
     tracer?: Tracer; guardPipeline?: GuardPipeline;
-    evalMode?: boolean; appraisalProvider?: AppraisalProvider; dataDir?: string; toolRegistry?: ToolRegistry;
+    evalMode?: boolean; appraisalProvider?: AppraisalProvider; dataDir?: string; toolRegistry?: ToolRegistry; candidateSelection?: boolean; enableTools?: boolean;
   }) {
     this.configDir = opts.configDir;
     this.genModel = opts.genModel ?? '';
     this.psychModel = opts.psychModel ?? opts.psychProvider.model;
     this.toolRegistry = opts.toolRegistry ?? new ToolRegistry();
-    this.registerDefaults = !opts.toolRegistry;
-    this.config = loadAssistantConfig(opts.configDir);
+    this.registerDefaults = !opts.toolRegistry && opts.enableTools === true;
+    this.config = loadCharacterConfig(opts.configDir);
+    this.candidateSelection = opts.candidateSelection ?? true;
     this.dataDir = opts.dataDir ?? process.env.MEMORY_DB_DIR ?? './data';
     this.graph = new KnowledgeGraph(join(this.dataDir, 'knowledge-graph.json'));
-    this.cognition = new CognitiveCore(this.graph);
+    this.cognition = new CognitiveCore(this.graph, Date.now(), this.config.psychology);
     this.fastProvider = opts.fastProvider ?? opts.genProvider;
     this.slowProvider = opts.genProvider;
-    this.appraisalProvider = opts.appraisalProvider ?? new LanguageAppraisalProvider(opts.psychProvider, opts.psychModel);
+    this.appraisalProvider = opts.appraisalProvider ?? new LanguageAppraisalProvider(opts.psychProvider, opts.psychModel, this.config);
     this.tracer = opts.tracer;
     this.evalMode = opts.evalMode ?? false;
     this.guardPipeline = opts.guardPipeline ?? new GuardPipeline([createRegexDenyGate(), createSafetyCheckGate(), createToolArgsValidatorGate()]);
@@ -94,11 +97,25 @@ export class CharacterAgent {
     return { input, systemPrompt: this.currentPrompt, response: result.response, behaviorModes: {}, toolResults: this.lastToolResults, totalTokens: result.totalTokens, elapsedMs: result.elapsedMs };
   }
   async *runStream(input: string, opts?: RunOptions): AsyncGenerator<TurnEvent, RunResult, void> {
+    return yield* this.respond(input, opts);
+  }
+  tick(now = Date.now()): void { if (!this.busy) this.cognition.advance(Math.max(now, this.cognition.state.at)); }
+  getInitiative(now = Date.now()) {
+    if (this.busy) return;
+    this.tick(now); return this.cognition.initiative(now);
+  }
+  async *runInitiative(opts?: RunOptions): AsyncGenerator<TurnEvent, RunResult, void> {
+    const proposal = this.getInitiative();
+    if (!proposal) throw new Error('当前没有适合主动表达的动机');
+    return yield* this.respond('根据已有事件与当前动机，自主延续一个相关话题。没有新的用户输入。', opts, proposal.sourceEventId);
+  }
+  private async *respond(input: string, opts?: RunOptions, initiativeSource?: string): AsyncGenerator<TurnEvent, RunResult, void> {
     if (this.busy) throw new Error('A turn is already in progress');
     this.busy = true;
     this.lastToolResults = [];
     const start = Date.now();
     let response = '';
+    let totalTokens = 0;
     try {
       await this.initialize();
       opts?.signal?.throwIfAborted();
@@ -110,30 +127,37 @@ export class CharacterAgent {
         yield { type: 'text_delta', text: response };
       } else {
         input = checked.content;
-        const observation = this.cognition.observe(input);
+        const observation = initiativeSource ? this.graph.get(initiativeSource)! : this.cognition.observe(input);
         this.turnCount++; this.tickCount++;
         const appraisalStart = Date.now();
         yield { type: 'phase_start', phase: 'appraise', ts: appraisalStart };
         try {
-          const assessment = await this.appraisalProvider.assess(input, this.graph.context(input), opts?.signal);
-          opts?.signal?.throwIfAborted();
-          this.cognition.appraise(observation.id, assessment);
+          if (!initiativeSource) {
+            const assessment = await this.appraisalProvider.assess(input, this.cognition.assessmentContext(input), opts?.signal);
+            opts?.signal?.throwIfAborted();
+            this.cognition.appraise(observation.id, assessment);
+          }
         } catch (error) {
           opts?.signal?.throwIfAborted();
           yield { type: 'error', phase: 'appraise', message: `情境评估不可用，保留既有信念：${(error as Error).message}`, recoverable: true };
-          this.cognition.advance();
+          this.cognition.advance(Math.max(Date.now(), this.cognition.state.at));
         }
         yield { type: 'phase_end', phase: 'appraise', ts: appraisalStart, durationMs: Date.now()-appraisalStart };
         const decisionStart = Date.now();
         yield { type: 'phase_start', phase: 'decide', ts: decisionStart };
-        this.lastDecision = this.cognition.decide(observation.id);
+        this.lastDecision = this.cognition.decide(observation.id, !!initiativeSource);
+        const decisionId = this.graph.last('decision')!.id;
+        const plan = responsePlan(this.cognition.state, this.config.psychology, this.lastDecision[0], !!initiativeSource);
+        if (!this.candidateSelection) plan.candidateCount = 1;
         yield { type: 'phase_end', phase: 'decide', ts: decisionStart, durationMs: Date.now()-decisionStart };
         this.currentPrompt = [
-          `你是角色 ${this.config.name}。人格：${this.config.traits}。核心驱动：${this.config.essence}。`,
+          `你是角色 ${this.config.name}。身份：${this.config.identity}。人格：${this.config.traits}。核心驱动：${this.config.essence}。`,
+          this.config.emotions,
           this.config.rules,
           '根据当下的主观感受自然回应。外部事实以原始事件为依据；不把心理推断说成对方真实动机。不编造记忆或工具执行结果。',
           this.cognition.prompt(input),
           `【可调整的回应策略】${JSON.stringify(this.lastDecision[0])}`,
+          `【表达控制】${JSON.stringify(plan)}`,
         ].join('\n\n');
         const ctx: TurnContext = { input, systemPrompt: this.currentPrompt, response: '', behaviorModes: {}, toolResults: [], totalTokens: 0, elapsedMs: 0 };
         for (const hook of this.hooks) await hook.beforeBuild?.(ctx);
@@ -148,12 +172,17 @@ export class CharacterAgent {
         const signal = opts?.signal ?? new AbortController().signal;
         const generationStart = Date.now();
         yield { type: 'phase_start', phase: 'generate', ts: generationStart };
-        for await (const op of generator.generate(ctx.systemPrompt, input, signal, this.toolRegistry.getDefinitions(), .6, 1200)) {
+        for await (const op of generator.generate(ctx.systemPrompt, input, signal, initiativeSource ? [] : this.toolRegistry.getDefinitions(), plan.temperature, plan.maxTokens)) {
           if (op.type === 'append') response += op.span.text;
           else if (op.type === 'invalidate') response = '';
           else if (op.type === 'tool_start' || op.type === 'tool_end') yield op;
         }
         signal.throwIfAborted();
+        if (ctx.toolResults.length) plan.candidateCount = 1;
+        const selection = await selectResponse(this.fastProvider, this.genModel, ctx.systemPrompt, input, response, plan, signal);
+        totalTokens = generator.totalTokens + (selection.totalTokens ?? 0);
+        response = selection.text;
+        if (!response.trim()) throw new Error('模型没有返回可用回应；输入与已执行结果保留，请重试。');
         yield { type: 'phase_end', phase: 'generate', ts: generationStart, durationMs: Date.now()-generationStart };
         const guardStart = Date.now();
         yield { type: 'phase_start', phase: 'guard_output', ts: guardStart };
@@ -164,15 +193,27 @@ export class CharacterAgent {
         const commitStart = Date.now();
         yield { type: 'phase_start', phase: 'commit_memory', ts: commitStart };
         const answer = this.cognition.observe(response, 'assistant');
-        this.graph.link(answer.id, observation.id, 'responds_to');
+        this.graph.link(answer.id, observation.id, initiativeSource ? 'continues' : 'responds_to');
+        const control = this.graph.add('control', '生成控制与候选选择', { decisionId, answerId: answer.id, plan, selection: { status: selection.status, selected: selection.selected, scores: selection.scores }, outputAllowed: output.allowed, support: this.fastProvider.controlSupport ?? { temperature: 'unknown', maxTokens: 'unknown', mode: 'unknown' } });
+        this.graph.link(control.id, decisionId, 'implements'); this.graph.link(control.id, answer.id, 'produces');
+        if (output.allowed) this.cognition.markAction(decisionId, observation.id, !!initiativeSource);
+        else {
+          delete this.cognition.state.motivation.pending;
+          if (initiativeSource) {
+            this.cognition.state.motivation.lastInitiativeAt = this.cognition.state.at;
+            this.cognition.state.motivation.lastInitiativeSourceId = initiativeSource;
+          }
+          this.cognition.checkpoint();
+        }
         this.graph.save();
         yield { type: 'phase_end', phase: 'commit_memory', ts: commitStart, durationMs: Date.now()-commitStart };
         ctx.response = response;
+        ctx.totalTokens = totalTokens; ctx.elapsedMs = Date.now() - start;
         for (const hook of this.hooks) await hook.afterGenerate?.(ctx);
         yield { type: 'text_delta', text: response };
         for (const hook of this.hooks) await hook.onStream?.(ctx, response);
       }
-      const result = { turnId: this.turnCount, response, totalTokens: 0, elapsedMs: Date.now()-start };
+      const result = { turnId: this.turnCount, response, totalTokens, elapsedMs: Date.now()-start };
       yield { type: 'done', turnId: result.turnId, elapsedMs: result.elapsedMs, totalTokens: result.totalTokens };
       return result;
     } finally { this.release(); }
@@ -211,8 +252,9 @@ export class CharacterAgent {
     const mind = structuredClone({ state: this.cognition.state, phenomena: this.cognition.phenomena });
     return {
       agentName: this.config.name, turnCount: this.turnCount, mind,
-      decision: this.lastDecision[0]?.policy ?? this.graph.all('decision').at(-1)?.text ?? 'clarify',
-      memory: { events: this.graph.all('event').length, appraisals: this.graph.all('appraisal').length, states: this.graph.all('state').length, phenomena: this.graph.all('phenomenon').length, summaries: this.graph.all('summary').length, nodes: this.graph.all().length },
+      decision: this.lastDecision[0]?.policy ?? this.graph.last('decision')?.text ?? 'clarify',
+      control: this.graph.last('control')?.data,
+      memory: { events: this.graph.count('event'), appraisals: this.graph.count('appraisal'), states: this.graph.count('state'), phenomena: this.graph.count('phenomenon'), summaries: this.graph.count('summary'), nodes: this.graph.count() },
     };
   }
   getModelInfo() { return { generation: this.genModel || this.fastProvider.model, appraisal: this.psychModel }; }

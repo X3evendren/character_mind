@@ -2,7 +2,7 @@
   "name": "character-mind-v3",
   "version": "3.0.0-ts",
   "private": true,
-  "description": "Character Mind v3 — an unreal perfect companion. TypeScript rewrite.",
+  "description": "Character Mind — evidence-linked memory and integrated affective dynamics.",
   "type": "module",
   "scripts": {
     "dev": "tsx src/dev-entry.ts",
@@ -12,10 +12,11 @@
     "eval": "tsx src/eval/run-eval.ts",
     "eval:safety": "tsx src/eval/run-eval.ts --suite safety",
     "eval:personality": "tsx src/eval/run-eval.ts --suite personality",
-    "test:cognition": "node --experimental-transform-types --import ./tests/resolve-typescript.mjs --test tests/cognition.test.ts tests/cognitive-integration.test.ts",
+    "test:cognition": "node --experimental-transform-types --import ./tests/resolve-typescript.mjs --test tests/cognition.test.ts tests/cognitive-integration.test.ts tests/dynamics.test.ts",
     "typecheck": "tsc --noEmit",
     "test:tui": "vitest run src/ui/workspace.test.tsx",
-    "test:live": "tsx tests/live-smoke.ts"
+    "test:live": "tsx tests/live-smoke.ts",
+    "test:live-affect": "tsx tests/live-affect.ts"
   },
   "dependencies": {
     "fast-glob": "3.3.3",

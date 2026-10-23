@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { CharacterAgent } from '../src/agent/agent.ts';
 import { ToolRegistry } from '../src/tools/registry.ts';
 import { GuardPipeline } from '../src/guard/pipeline.ts';
+import { assessment } from './fixtures/appraisal.ts';
 
 function create(overrides: Record<string, unknown> = {}) {
   const provider = {
@@ -18,7 +19,7 @@ function create(overrides: Record<string, unknown> = {}) {
     configDir: './config', dataDir: mkdtempSync(join(tmpdir(), 'agent-core-')),
     genProvider: provider as any, psychProvider: provider as any,
     toolRegistry: new ToolRegistry(), guardPipeline: new GuardPipeline([]),
-    appraisalProvider: { assess: async () => ({ distribution: { safe:.05, threat:.8, loss:.1, repair:.01, uncertain:.04 }, reliability:.5, structure:['conflict','departure'], contextBinding:.9, controllability:.9, evidence:'test assessment' }) },
+    appraisalProvider: { assess: async () => assessment() }, candidateSelection: false,
     ...overrides,
   });
 }
@@ -26,7 +27,7 @@ test('both public APIs infer phenomena before generation and remember every turn
   const agent=create();
   let prompt='';
   agent.hooks.push({beforeBuild:async ctx=>{
-    assert.ok(agent.cognition.state.belief.threat>.2);
+    assert.ok(agent.cognition.state.negative>.2);
     assert.equal(agent.graph.all('event').at(-1)?.data.role,'user');
     prompt=ctx.systemPrompt;
   }});
@@ -35,7 +36,7 @@ test('both public APIs infer phenomena before generation and remember every turn
   for await (const _ of agent.runStream('你记得我的名字吗')) {}
   assert.ok(prompt.includes('小明'));
   assert.equal(agent.graph.all('event').length,4);
-  assert.equal(agent.graph.all('state').length,2);
+  assert.equal(agent.graph.all('state').length,4);
   assert.ok(prompt.includes('当前现象推断'));
   assert.ok(agent.graph.all('phenomenon').length >= 2);
 });

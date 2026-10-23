@@ -87,7 +87,7 @@ try {
   assert.deepEqual(created.agent.graph.expand(summary.id).map(n => n.id), original.slice(0, 2).map(n => n.id));
   assert.deepEqual(created.agent.graph.all('event'), original); steps.push('TUI compression + exact source expansion');
   stdin.write('\t'); await until(() => useWorkspaceStore.getState().view === 'mind', 'mind tab');
-  await until(() => lastFrame.includes('主观情境信念'), 'mind render');
+  await until(() => lastFrame.includes('关系信念'), 'mind render');
   writeFileSync(join(auditDir, 'tui-live-mind.txt'), lastFrame);
   stdin.write('\t'); await until(() => lastFrame.includes('知识图谱'), 'memory tab');
   stdin.write('\r'); await until(() => lastFrame.includes('来源详情'), 'memory inspection');

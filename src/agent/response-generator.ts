@@ -9,7 +9,7 @@ type ToolEvent = Extract<TurnEvent, { type: 'tool_start' | 'tool_end' }>;
 let _nextSpanId = 1;
 function nextSpanId(): string { return `s${_nextSpanId++}`; }
 
-interface StreamToken { text: string; done: boolean; toolCalls?: ToolCall[]; reasoningContent?: string; }
+interface StreamToken { text: string; done: boolean; toolCalls?: ToolCall[]; reasoningContent?: string; finishReason?: string; totalTokens?: number; }
 const SENTENCE_END = /[。！？\n]/g;
 const MIN_SENTENCE_LEN = 4;
 
@@ -36,12 +36,13 @@ async function* streamTokens(
   let streamError: Error | null = null;
   let toolCalls: ToolCall[] = [];
   let reasoningContent = "";
+  let finishReason = '', totalTokens = 0;
 
-  const promise = provider.chatStream(
+  void provider.chatStream(
     messages, temperature, maxTokens, tools,
     async (delta: string) => { buffer.push(delta); },
     model, signal,
-  ).then((r: any) => { toolCalls = r.toolCalls ?? []; reasoningContent = r.reasoningContent ?? ""; streamDone = true; })
+  ).then((r: any) => { toolCalls = r.toolCalls ?? []; reasoningContent = r.reasoningContent ?? ""; finishReason = r.finishReason ?? ''; totalTokens = r.usage?.totalTokens ?? 0; streamDone = true; })
    .catch((e: Error) => { streamError = e; streamDone = true; });
 
   let idx = 0;
@@ -52,7 +53,7 @@ async function* streamTokens(
   }
   while (idx < buffer.length) { yield { text: buffer[idx], done: false }; idx++; }
   if (streamError) throw streamError;
-  yield { text: "", done: true, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, reasoningContent: reasoningContent || undefined };
+  yield { text: "", done: true, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, reasoningContent: reasoningContent || undefined, finishReason, totalTokens };
 }
 
 export class ResponseGenerator {
@@ -60,6 +61,7 @@ export class ResponseGenerator {
   private toolRegistry?: ToolRegistry;
   private tracer?: Tracer;
   private maxToolRounds = 10;
+  totalTokens = 0;
   onToolResult?: (call: ToolCall, result: { success: boolean; output: string; error?: string }) => void;
 
   constructor(fastProvider: any, toolRegistry?: ToolRegistry, tracer?: Tracer, private readonly model = '') {
@@ -73,6 +75,7 @@ export class ResponseGenerator {
     tools?: any, temperature = 0.6, maxTokens = 300,
   ): AsyncGenerator<SpanOp | ToolEvent> {
     const effectiveTools = tools ?? this.toolRegistry?.getDefinitions();
+    this.totalTokens = 0;
     const messages: any[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
@@ -122,10 +125,12 @@ export class ResponseGenerator {
       }
 
       // Record chat span
+      this.totalTokens += lastToken.totalTokens ?? 0;
+      if (['length','max_tokens'].includes(lastToken.finishReason ?? '')) throw new Error('回应被模型截断，未作为完整回应保存；请重试。');
       const chatLatency = performance.now() - chatTTFT;
       this.tracer?.recordChat(
         this.model || this.fastProvider.model || "unknown",
-        { totalTokens: 0 },
+        { totalTokens: lastToken.totalTokens ?? 0 },
         ttftMs, chatLatency,
       );
 
@@ -135,6 +140,7 @@ export class ResponseGenerator {
       const toolCalls = lastToken.toolCalls;
       if (!toolCalls || toolCalls.length === 0) break;
       if (!this.toolRegistry) break;
+      if (round === this.maxToolRounds - 1) throw new Error('工具轮数达到上限，未提交不完整回应');
 
       const assistantMsg: any = { role: "assistant", content: assistantContent || null };
       if (lastToken.reasoningContent) assistantMsg.reasoning_content = lastToken.reasoningContent;
@@ -145,6 +151,7 @@ export class ResponseGenerator {
 
       for (const tc of toolCalls) {
         signal.throwIfAborted();
+        if (!effectiveTools?.some((definition: any) => definition.function?.name === tc.name)) throw new Error(`Tool unavailable in this response: ${tc.name}`);
         yield { type: 'tool_start', callId: tc.id, tool: tc.name, args: tc.arguments };
         const toolStart = performance.now();
         const result = await this.toolRegistry.execute(tc.name, tc.arguments, {

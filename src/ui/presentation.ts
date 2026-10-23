@@ -4,6 +4,8 @@ import type { GraphNode } from '../memory/knowledge-graph';
 import { getCommands } from '../commands';
 import { wrapText } from './text';
 import { marked } from 'marked';
+import { beliefMean, effectiveAffect } from '../mind/process-state';
+import { GOALS, GOAL_NAMES } from '../mind/profile';
 
 export type Tone = 'text' | 'textDim' | 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'error';
 export interface Row { text: string; tone?: Tone; bold?: boolean; }
@@ -23,9 +25,9 @@ export function markdownRows(text: string): Row[] {
     return [row(token.raw.trimEnd())];
   });
 }
-export const POLICY_NAMES: Record<string, string> = { engage: '交流', clarify: '澄清', set_boundary: '设立边界', ground: '恢复当下定向', repair: '关系修复' };
+export const POLICY_NAMES: Record<string, string> = { engage: '交流', clarify: '澄清', set_boundary: '设立边界', ground: '恢复当下定向', repair: '关系修复', express_feeling: '表达感受', share_joy: '分享喜悦', explore: '探索', cooperate: '共同完成任务', wait: '等待' };
 export const PHASE_NAMES: Record<string, string> = { guard_input: '检查输入', appraise: '理解情境', decide: '选择回应策略', generate: '生成回应', guard_output: '检查回应', commit_memory: '保存记忆' };
-export const KIND_NAMES: Record<string, string> = { event: '事件', appraisal: '评估', state: '过程状态', phenomenon: '现象', emotion: '历史情绪记录', decision: '决策', summary: '摘要', entity: '实体', relation: '关系' };
+export const KIND_NAMES: Record<string, string> = { event: '事件', appraisal: '评估', state: '过程状态', phenomenon: '现象', emotion: '历史情绪记录', decision: '决策', summary: '摘要', entity: '实体', relation: '关系', learning: '行动学习', control: '生成控制' };
 const percent = (n: number) => `${Math.round(n * 100)}%`;
 function meter(label: string, value: number, tone: Tone = 'primary'): Row {
   const count = Math.round(Math.max(0, Math.min(1, value)) * 10);
@@ -38,6 +40,7 @@ export const WORKSPACE_COMMANDS = [
   { name: 'search', description: '在节点原文、关系与结构中搜索' },
   { name: 'stop', description: '取消当前对话，保留已记录输入' },
   { name: 'clear', description: '清空显示记录，保留图谱记忆' },
+  { name: 'initiative', description: '主动表达 on / off / status' },
 ];
 export function commandItems() { return [...getCommands().filter(c => !c.isHidden), ...WORKSPACE_COMMANDS]; }
 export function helpRows(): Row[] {
@@ -58,7 +61,8 @@ export function helpRows(): Row[] {
     row('这些数值描述角色的主观模拟，不是对使用者的诊断。'),
     row('情绪体验、记忆共鸣、闪回样再体验、解离样疏离均由过程与来源证据推断，可以共存。'),
     row('现象区分发生、减弱、消退；强度和支持度都是模型读数，不是诊断概率。'),
-    row('信念是经过降权的情境分布；策略分数用于比较行动，不是发生概率。'),
+    row('关系信念分别估计善意、可靠与可获得性；策略分数用于比较行动，不是发生概率。'),
+    row('神经调节是计算类比，会影响注意、学习、动机和生成；不是人体浓度测量。'),
     row('摘要是有损视图。原始事件、情绪与关系结构保留，可随时展开。'),
   ];
 }
@@ -69,7 +73,7 @@ export function conversationRows(turns: Turn[], name: string, debug: boolean): R
     row('Tab 查看心智、记忆与帮助；/help 查看全部操作。', 'textDim')];
   return turns.flatMap(t => {
     const time = new Date(t.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    const rows = [row(`${t.kind === 'command' ? '命令' : '你'} · ${time}`, 'accent', true), row(t.userMessage.content)];
+    const rows = t.kind === 'initiative' ? [row(`主动表达 · ${time}`, 'accent', true)] : [row(`${t.kind === 'command' ? '命令' : '你'} · ${time}`, 'accent', true), row(t.userMessage.content)];
     if (t.kind !== 'command') rows.push(row(`${name} · ${t.status === 'streaming' ? '处理中' : t.status === 'interrupted' ? '已中断' : '已完成'}${t.elapsedMs ? ` · ${(t.elapsedMs / 1000).toFixed(1)} 秒` : ''}`, t.status === 'interrupted' ? 'warning' : 'primary', true));
     for (const b of t.blocks) {
       if (b.type === 'reasoning') continue;
@@ -98,10 +102,18 @@ export function mindRows(snapshot: AgentSnapshot | null, agent: AgentPort | null
   if (!snapshot.mind.phenomena.length) rows.push(row('暂无足够依据支持的现象。', 'textDim'));
   rows.push(row(''), row('底层过程', 'secondary', true), row(`效价 ${e.valence >= 0 ? '+' : ''}${e.valence.toFixed(2)}  ${e.valence < -.2 ? '偏负向' : e.valence > .2 ? '偏正向' : '接近中性'}`),
     meter('唤醒', e.arousal), meter('感受可及', e.affectAccess), meter('自我连续', e.selfContinuity), meter('情境绑定', e.contextBinding), meter('能动性', e.agency), row(''),
-    row('主观情境信念', 'secondary', true),
-    ...([['safe', '安全'], ['threat', '威胁'], ['loss', '失落'], ['repair', '修复'], ['uncertain', '不确定']] as const).map(([key, label]) => meter(label, e.belief[key])),
+    meter('正向感受', effectiveAffect(e).positive), meter('负向感受', effectiveAffect(e).negative),
+    row('关系信念', 'secondary', true),
+    ...([['goodwill', '善意'], ['reliability', '可靠'], ['availability', '可获得性']] as const).map(([key, label]) => meter(label, beliefMean(e.belief[key]))),
     row(''), row(`回应策略 · ${POLICY_NAMES[snapshot.decision] ?? snapshot.decision}`, 'secondary', true));
   if (compact) return [...rows, row(`图谱 ${snapshot.memory.nodes} 节点 · ${snapshot.memory.summaries} 摘要`, 'textDim'), row('Tab 查看心智详情与来源', 'textDim')];
+  rows.push(row(''), row('需要与调节', 'secondary', true), ...GOALS.map(g => meter(`${GOAL_NAMES[g]}满足`, e.motivation.satisfaction[g])), meter('可用精力', e.motivation.energy), row(`调节：${e.regulation.strategy} · ${e.regulation.reason}`));
+  for (const c of e.concerns) rows.push(row(`仍在意：${GOAL_NAMES[c.goal]} ${percent(c.load)} · ${c.evidence}`, 'warning'));
+  const n = e.neuromodulation;
+  rows.push(row(''), row('神经调节计算类比', 'secondary', true), row(`多巴胺通路 · 预测误差 ${n.rewardPredictionError.toFixed(3)} · 奖赏率 ${n.rewardRate.toFixed(3)}`), meter('追求动机', n.incentive), meter('去甲肾上腺素通路 · 警觉', n.alerting), meter('不确定性', n.uncertainty), meter('催产素通路 · 社会显著性', n.socialSalience), meter('历史联结积累', n.attachment));
+  const learning = e.motivation.lastLearning;
+  if (learning) rows.push(row(`上次行动反馈 · ${POLICY_NAMES[learning.policy]} · 奖赏 ${learning.reward.toFixed(3)} · 误差 ${learning.predictionError.toFixed(3)}`), row(`反馈来源 ${learning.sourceEventId}`, 'textDim'));
+  if (snapshot.control) rows.push(row('生成控制', 'secondary', true), row(JSON.stringify(snapshot.control, null, 2)));
   const decision = agent?.graph.all('decision').at(-1);
   const scores = decision?.data.candidates as Array<{ policy: string; score: number; reason: string }> | undefined;
   for (const s of scores ?? []) rows.push(row(`${POLICY_NAMES[s.policy] ?? s.policy}  ${s.score.toFixed(3)} · ${s.reason}`));

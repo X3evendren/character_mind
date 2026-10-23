@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type NodeKind = 'entity' | 'relation' | 'event' | 'appraisal' | 'state' | 'phenomenon' | 'emotion' | 'decision' | 'summary';
+export type NodeKind = 'entity' | 'relation' | 'event' | 'appraisal' | 'state' | 'phenomenon' | 'emotion' | 'decision' | 'summary' | 'learning' | 'control';
 export interface GraphNode {
   id: string;
   kind: NodeKind;
@@ -10,7 +10,7 @@ export interface GraphNode {
   text: string;
   data: Record<string, unknown>;
 }
-export interface GraphEdge { from: string; to: string; relation: 'interprets' | 'updates' | 'manifests' | 'grounded_in' | 'evokes' | 'reactivates' | 'motivates' | 'responds_to' | 'summarizes' | 'subject' | 'object' | 'asserts' | 'authored_by'; }
+export interface GraphEdge { from: string; to: string; relation: 'interprets' | 'updates' | 'manifests' | 'grounded_in' | 'evokes' | 'reactivates' | 'motivates' | 'responds_to' | 'summarizes' | 'subject' | 'object' | 'asserts' | 'authored_by' | 'continues' | 'implements' | 'produces'; }
 interface GraphData { version: 1; nodes: GraphNode[]; edges: GraphEdge[]; }
 
 /** One evidence graph. Compression changes a view, never the source events. */
@@ -19,6 +19,8 @@ export class KnowledgeGraph {
   private edges: GraphEdge[] = [];
   private edgeKeys = new Set<string>();
   private outgoing = new Map<string, GraphEdge[]>();
+  private counts = new Map<NodeKind, number>();
+  private latest = new Map<NodeKind, string>();
   constructor(private readonly file?: string) {
     if (file && existsSync(file)) {
       const data = JSON.parse(readFileSync(file, 'utf8')) as GraphData;
@@ -26,6 +28,7 @@ export class KnowledgeGraph {
       for (const node of data.nodes) {
         if (!node.id || this.nodes.has(node.id)) throw new Error('Invalid graph node');
         this.nodes.set(node.id, node);
+        this.counts.set(node.kind, (this.counts.get(node.kind) ?? 0) + 1); this.latest.set(node.kind, node.id);
       }
       for (const edge of data.edges) this.link(edge.from, edge.to, edge.relation);
     }
@@ -33,9 +36,12 @@ export class KnowledgeGraph {
   add(kind: NodeKind, text: string, data: Record<string, unknown> = {}, at = Date.now()): GraphNode {
     const node = { id: randomUUID(), kind, text, data: structuredClone(data), at };
     this.nodes.set(node.id, node);
+    this.counts.set(kind, (this.counts.get(kind) ?? 0) + 1); this.latest.set(kind, node.id);
     return structuredClone(node);
   }
   get(id: string): GraphNode | undefined { const n = this.nodes.get(id); return n && structuredClone(n); }
+  count(kind?: NodeKind): number { return kind ? this.counts.get(kind) ?? 0 : this.nodes.size; }
+  last(kind: NodeKind): GraphNode | undefined { const id = this.latest.get(kind); return id ? this.get(id) : undefined; }
   entity(name: string): GraphNode {
     const existing = [...this.nodes.values()].find(n => n.kind === 'entity' && n.text === name);
     return existing ? structuredClone(existing) : this.add('entity', name, { resolution: 'exact_label_only' });
@@ -56,7 +62,10 @@ export class KnowledgeGraph {
   /** Keep interpretation, relationships, process and manifestations together in graph views. */
   interpretationContext(id: string): GraphNode[] {
     const states = this.related(id, 'updates');
-    return [...this.related(id, 'asserts'), ...this.related(id, 'evokes'), ...states, ...states.flatMap(n => this.related(n.id, 'manifests'))];
+    const eventId = this.get(id)?.data.eventId;
+    const decisions = this.all('decision').filter(n => n.data.eventId === eventId);
+    const learning = this.all('learning').filter(n => n.data.sourceEventId === eventId);
+    return [...this.related(id, 'asserts'), ...this.related(id, 'evokes'), ...states, ...states.flatMap(n => this.related(n.id, 'manifests')), ...decisions, ...learning];
   }
   /** Source IDs remain available, including nested summary lineage. */
   expand(id: string): GraphNode[] {

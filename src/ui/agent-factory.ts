@@ -23,6 +23,7 @@ export interface CreateAgentEnv {
   configDir?: string;
   psychModel?: string;
   dataDir?: string;
+  enableTools?: boolean;
   confirmTool?: (tool: ToolDef, params: unknown, ctx: ToolContext) => Promise<boolean>;
 }
 
@@ -75,6 +76,7 @@ export async function createAgent(env: CreateAgentEnv): Promise<CreatedAgent> {
     psychModel,
     tracer,
     dataDir: env.dataDir,
+    enableTools: env.enableTools ?? process.env.CHARACTER_TOOLS === '1',
   });
   if (env.confirmTool) agent.toolRegistry.confirmTool = env.confirmTool;
   await agent.initialize();

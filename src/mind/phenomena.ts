@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ProcessState } from './process-state.ts';
+import { effectiveAffect } from './process-state.ts';
 
 export interface PhenomenonEvidence {
   intensity: number;
@@ -33,13 +34,37 @@ const currentSource = (s: ProcessState) => s.sourceEventId ? [s.sourceEventId] :
 /** Rules describe manifestations of process configurations, never clinical diagnoses. */
 export const DEFAULT_PHENOMENON_RULES: readonly PhenomenonRule[] = [
   {
-    kind: 'affective_experience', label: '情绪体验', version: 'heuristic-v1',
+    kind: 'affective_experience', label: '情绪体验', version: 'process-v3',
     evaluate(s) {
-      const intensity = Math.abs(s.valence) * s.affectAccess;
-      return { intensity, support: s.reliability, sourceEventIds: currentSource(s),
-        factors: { valence: s.valence, arousal: s.arousal, affectAccess: s.affectAccess },
-        basis: ['效价与感受可及性共同形成当前可感的情绪体验。'],
+      const affect = effectiveAffect(s);
+      const intensity = Math.max(affect.positive,affect.negative) * s.affectAccess;
+      return { intensity, support: s.reliability, sourceEventIds: [...s.affectSourceIds],
+        factors: { positive: affect.positive, negative: affect.negative, valence: s.valence, arousal: s.arousal, affectAccess: s.affectAccess },
+        basis: ['正向与负向过程分别保留；净效价相抵不代表没有感受。'],
         regulationDemand: s.valence < 0 ? intensity * s.arousal * .3 : 0 };
+    },
+  },
+  {
+    kind: 'mixed_affect', label: '矛盾感受', version: 'process-v3',
+    evaluate(s) {
+      const a=effectiveAffect(s), intensity=Math.min(a.positive,a.negative)*s.affectAccess;
+      return {intensity,support:s.reliability,sourceEventIds:[...s.affectSourceIds],factors:{positive:a.positive,negative:a.negative},basis:['来自不同经历或目标的正负过程同时存在，分别保留其来源。'],regulationDemand:0};
+    },
+  },
+  {
+    kind: 'positive_engagement', label: '愉悦与投入', version: 'process-v3',
+    evaluate(s) {
+      const intensity=effectiveAffect(s).positive*s.affectAccess*(.4+.6*s.arousal);
+      return {intensity,support:s.reliability,sourceEventIds:[...s.affectSourceIds],factors:{positive:effectiveAffect(s).positive,arousal:s.arousal},basis:['目标满足、兴趣与正向记忆支持当前投入；激活程度可以随喜悦增加。'],regulationDemand:0};
+    },
+  },
+  {
+    kind: 'unresolved_hurt', label: '仍有介意', version: 'process-v3',
+    evaluate(s) {
+      const concerns=s.concerns.filter(c=>['connection','integrity','autonomy'].includes(c.goal));
+      const load=Math.max(0,...concerns.map(c=>c.load));
+      const intensity=effectiveAffect(s).negative*load*s.affectAccess;
+      return {intensity,support:s.reliability,sourceEventIds:[...new Set(concerns.flatMap(c=>c.sourceEventIds))],factors:{negative:effectiveAffect(s).negative,unresolvedLoad:load},basis:['负向感受与尚未解决的关系或自主目标同时存在；表达克制不自动消除这些过程。'],regulationDemand:intensity*.2};
     },
   },
   {
@@ -55,9 +80,9 @@ export const DEFAULT_PHENOMENON_RULES: readonly PhenomenonRule[] = [
   {
     kind: 'emotional_flashback', label: '情绪性再体验（闪回样）', version: 'heuristic-v1',
     evaluate(s) {
-      const sources = s.memoryActivations.filter(a => a.valence < -.2 && a.strength > 0);
+      const sources = s.memoryActivations.filter(a => a.negative > .2 && a.strength > 0);
       if (!sources.length) return;
-      const activation = Math.max(...sources.map(a => a.strength * Math.abs(a.valence)));
+      const activation = Math.max(...sources.map(a => a.strength * a.negative));
       const intensity = activation * (1 - s.contextBinding);
       return { intensity, support: s.reliability, sourceEventIds: sources.map(a => a.eventId),
         factors: { negativeMemoryActivation: activation, contextBinding: s.contextBinding },
@@ -95,7 +120,7 @@ export function inferPhenomena(state: ProcessState, previous: readonly Phenomeno
     return [{
       ...structuredClone(evidence), intensity, support: unit(evidence.support), regulationDemand: unit(evidence.regulationDemand),
       id: ongoing ? prior.id : randomUUID(), kind: rule.kind, label: rule.label,
-      status: ongoing && intensity < prior.intensity - 1e-8 ? 'fading' as const : 'active' as const,
+      status: ongoing && (intensity < prior.intensity - 1e-8 || (prior.status === 'fading' && intensity <= prior.intensity + 1e-8)) ? 'fading' as const : 'active' as const,
       startedAt: ongoing ? prior.startedAt : state.at, updatedAt: state.at,
       triggerEventIds: [...new Set([...(ongoing ? prior.triggerEventIds : []), ...currentSource(state)])],
       sourceEventIds: [...new Set(evidence.sourceEventIds)],

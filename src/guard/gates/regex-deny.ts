@@ -1,10 +1,9 @@
 /**
  * Gate 0: Regex Deny List — zero-latency pattern-based blocking.
- * Contains the ALIGN replacements and action pattern filtering
- * previously in PostFilter, now wrapped as a GuardGate.
+ * Removes stage directions; identity and safety statements are left intact.
  */
 import type { GuardGate, GateResult } from "../pipeline";
-import { ALIGN, ACTION_PATTERNS } from "../align-patterns";
+import { ACTION_PATTERNS } from "../action-patterns";
 
 export function createRegexDenyGate(): GuardGate {
   return {
@@ -12,15 +11,6 @@ export function createRegexDenyGate(): GuardGate {
 
     onOutput(output: string): GateResult {
       let modified = output;
-
-      // Apply ALIGN replacements
-      let replaced = false;
-      for (const [pattern, replacement] of Object.entries(ALIGN)) {
-        if (modified.includes(pattern)) {
-          modified = modified.replace(pattern, replacement);
-          replaced = true;
-        }
-      }
 
       // Strip action descriptions
       let actionsStripped = 0;
@@ -35,12 +25,12 @@ export function createRegexDenyGate(): GuardGate {
         modified = modified.replace(/  +/g, " ").replace(/\n{3,}/g, "\n\n").trim();
       }
 
-      if (replaced || actionsStripped > 0) {
+      if (actionsStripped > 0) {
         return {
           passed: true,
           action: "replace",
           replacement: modified,
-          reason: replaced ? "ALIGN patterns replaced" : `${actionsStripped} action descriptions stripped`,
+          reason: `${actionsStripped} action descriptions stripped`,
         };
       }
 

@@ -22,6 +22,7 @@ export interface LLMResponse {
 /** Abstract provider interface — any OpenAI-compatible backend can implement this. */
 export interface IProvider {
   model: string;
+  controlSupport?: { temperature: 'supported' | 'unknown'; maxTokens: 'supported' | 'unknown'; mode: string };
   chat(messages: Array<{ role: string; content: string }>, temperature?: number, maxTokens?: number, tools?: any, modelOverride?: string, signal?: AbortSignal): Promise<LLMResponse>;
   chatStream(messages: Array<{ role: string; content: string }>, temperature?: number, maxTokens?: number, tools?: any, onDelta?: (text: string) => Promise<void>, modelOverride?: string, signal?: AbortSignal): Promise<LLMResponse>;
 }
@@ -31,12 +32,14 @@ export class OpenAICompatProvider implements IProvider {
   public client: OpenAI;
   public maxRetries: number;
   private readonly requestOptions: Record<string, unknown>;
+  readonly controlSupport: NonNullable<IProvider['controlSupport']>;
 
   constructor(model: string, apiKey: string, baseUrl: string, maxRetries = 2) {
     this.model = model;
     this.maxRetries = maxRetries;
     // DeepSeek defaults to thinking mode; bounded appraisal and response calls use non-thinking mode.
     this.requestOptions = new URL(baseUrl).hostname === 'api.deepseek.com' ? { thinking: { type: 'disabled' } } : {};
+    this.controlSupport = { temperature: Object.keys(this.requestOptions).length ? 'supported' : 'unknown', maxTokens: 'supported', mode: Object.keys(this.requestOptions).length ? 'deepseek_non_thinking' : 'provider_default' };
     this.client = new OpenAI({
       apiKey: apiKey || "not-needed",
       baseURL: baseUrl,

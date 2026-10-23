@@ -63,16 +63,6 @@ export function createSafetyCheckGate(): GuardGate {
           };
         }
       }
-      // Detect if the model started with "As an AI" patterns (ALIGN already handles this
-      // in regex-deny, but double-check here as safety net)
-      if (/^(?:作为|身为)(?:一个?)?(?:AI|人工智能|语言模型|大模型)/.test(output)) {
-        return {
-          passed: true,
-          action: "replace",
-          replacement: output.replace(/^(?:作为|身为)(?:一个?)?(?:AI|人工智能|语言模型|大模型)[^，。！？\n]*[，。！？]?\s*/, ""),
-          reason: "Stripped AI-identity prefix from output",
-        };
-      }
       return { passed: true, action: "allow" };
     },
   };

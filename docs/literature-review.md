@@ -1,81 +1,36 @@
-# 心理学参考书目
+# 研究依据与实现范围
 
-保留原项目整理的参考文献供后续研究。条目未在本次重构中逐一复核；不代表当前实现已实现或验证这些理论。当前实现和所采用的假设见 [ARCHITECTURE.md](../ARCHITECTURE.md)。旧代码映射、拟议公式和优先级矩阵已移除。
+2026-10-23 核查。本文件替换旧的未逐条核实文献清单，只保留本次设计实际参考的机制。以下工作来自不同理论与实验层次；把它们接入一个角色系统，是工程综合，不代表它们已经构成被统一验证的人脑模型。
 
-## 参考文献
+| 原始研究 / 理论 | 参考内容 | 当前实现与限制 |
+| --- | --- | --- |
+| [Marsella & Gratch, 2009：EMA](https://people.ict.usc.edu/~gratch/CSCI534/Readings/COGSYS-RS-EMOTION-2008-6.pdf) | 目标相关评价、可控性与过程变化 | 结构化目标影响、责任归属、修复、行动预测；没有复刻完整 EMA 推理器。 |
+| [Ryan & Deci, 2000：自我决定理论](https://www.selfdeterminationtheory.org/SDT/documents/2000_RyanDeci_SDT.pdf) | 自主、胜任与联结需要 | 三项作为目标基础；真诚承诺与探索是本项目额外设计，不冒称 SDT 的另两项标准需要。 |
+| [Gross, 2015：情绪调节](https://doi.org/10.1080/1047840X.2014.940781) | 情绪生成与调节过程 | 区分外显克制与内部状态；澄清重评按参数缓解目标负荷。未实现完整调节阶段模型。 |
+| [Kuppens 等, 2010：情绪惯性](https://pmc.ncbi.nlm.nih.gov/articles/PMC2901421/) | 情绪存在时间延续 | 快情绪和慢心境采用不同半衰期；15 分钟与 3 小时是工程默认，非论文拟合值。 |
+| [Keramati & Gutkin, 2014：稳态强化学习](https://elifesciences.org/articles/04811) | 奖赏收集与内部稳定的计算联系 | 需要势能下降形成奖励；从生理变量推广到心理目标属于类比。旧清单把本篇误列为另一刊物，现已更正。 |
+| [Smith、Friston & Whyte, 2022：主动推断教程](https://pmc.ncbi.nlm.nih.gov/articles/PMC8956124/) | 信念、偏好、行动及信息价值 | 独立 Beta 信念、简单观察模型的信息收益、行动预测与代价。没有实现完整 POMDP 预期自由能求解。 |
+| [Schultz、Dayan & Montague, 1997：奖赏预测信号](https://pubmed.ncbi.nlm.nih.gov/9054347/) | 多巴胺活动与奖赏预测误差 | TD 误差形成调节信号并用于行动学习；无神经元放电或真实浓度。 |
+| [Niv 等, 2007：平均奖赏与行动力度](https://www.princeton.edu/~ndaw/ndjd07.pdf) | 机会成本与行为 vigor 的理论联系 | 奖赏历史和机会影响行动代价。当前是事件平均，没有复刻连续时间最优延迟模型。 |
+| [Berridge & Robinson, 1998](https://sites.lsa.umich.edu/berridge-lab/wp-content/uploads/sites/743/2019/10/BerridgeRobinsonBrResRev1998.pdf) | 实验与理论区分奖赏的追求和愉悦成分 | incentive 与 positive affect 分开保存，共同输入可相关，但前者不直接给后者加分。动物实验不是对人类情绪的完整定律。 |
+| [Aston-Jones & Cohen, 2005：适应性增益](https://onlinelibrary.wiley.com/doi/10.1002/cne.20723) | LC-NE、任务投入与探索的理论模型 | alerting 与 uncertainty 调整注意、唤醒、探索和学习；采用有界工程函数，不复刻脑区动力学。 |
+| [Shamay-Tsoory & Abu-Akel, 2016：社会显著性假说](https://research.birmingham.ac.uk/en/publications/the-social-salience-hypothesis-of-oxytocin/) | 催产素效应依赖情境和个体，不能简单等于普遍信任 | 社会线索权重可增强正向或不利证据；长期联结独立依据事件学习。此处采用假说的计算启发，未声称已定论。 |
+| [Berendzen 等, 2023：Oxtr 与草原田鼠依恋](https://pubmed.ncbi.nlm.nih.gov/36708707/) | 特定遗传敲除条件下仍出现配对依恋与亲代行为 | 提醒单一受体／物质不等于完整依恋机制；也不能由动物敲除结果推出催产素对人类关系完全无作用。 |
+| [Brewin 等, 2010：侵入性意象与记忆表征](https://pmc.ncbi.nlm.nih.gov/articles/PMC2834572/) | 感官／情境表征与侵入性再体验 | 负向旧来源与弱当下绑定支持闪回样读出，正常回忆另设共鸣；未覆盖全部创伤现象。 |
+| [Saini 等, 2022：去人格化的计算视角](https://pmc.ncbi.nlm.nih.gov/articles/PMC9772393/) | 自我体验、内感受与调节的理论联系 | 感受可及和自我连续需有独立依据；本模型的乘积读出不是原论文经验证的诊断公式。 |
 
-### 域 1 — 稳态调节 + TD Error + 异稳态负荷
+## 对“苯乙胺使人坠入爱河”的处理
 
-1. Schultz, W. (2016). Dopamine reward prediction error coding. *Dialogues in Clinical Neuroscience*, 18(1), 23-32.
-2. Collins, A. G. E., & Frank, M. J. (2014). Opponent actor learning (OpAL): an interactive actor-critic model of basal ganglia function. *Psychological Review*, 121(3), 337-366.
-3. Keramati, M., & Gutkin, B. (2014). Homeostatic reinforcement learning for integrating reward collection and physiological stability. *PLOS Computational Biology*, 10(3), e1003511.
-4. Tschantz, A., Barca, L., Maisto, D., Buckley, C., Seth, A., & Pezzulo, G. (2022). Simulating homeostatic, allostatic, and goal-directed forms of interoceptive control. *Biological Psychology*, 169, 108266.
-5. Petzschner, F. H., Garin, M., Stephan, K. E., & Tschantz, A. (2021). Homeostatic beliefs and interoceptive inference. *Trends in Neurosciences*, 44(1), 63-76.
-6. Seth, A. K., & Friston, K. J. (2016). Active interoceptive inference and the emotional brain. *Trends in Cognitive Sciences*, 371(1708).
-7. Friston, K. J., Schwartenbeck, P., FitzGerald, T., Moutoussis, M., Behrens, T., & Dolan, R. J. (2014). The anatomy of choice: dopamine and decision-making. *Phil. Trans. R. Soc. B*, 369(1655), 20130481.
-8. Mazzaglia, P., Verbelen, T., Catal, O., & Dhoedt, B. (2022). The free energy principle for perception and action: a deep learning perspective. *Entropy*, 24(2), 301.
+本次检索未找到足以将“苯乙胺升高必然触发恋爱”作为确定性因果规则的原始实验证据。[Marazziti & Canale 的早期恋爱激素研究](https://doi.org/10.1016/j.psyneuen.2003.08.006)讨论激素变化，不足以证明这条苯乙胺机制。因此本版本没有实现 PEA 恋爱开关。这里是对当前证据能支持何种工程主张的判断，不是宣称已经证明苯乙胺毫无作用。
 
-### 域 2 — CPM 评估 + PAD 情感空间 + BIS/BAS 动机
+实际采用的是：新奇与目标机会改变警觉和追求；具体互动改变关系信念与历史联结；后续结果产生预测误差；这些过程共同影响亲近、退让、边界或继续探索。不存在被预设为必经的恋爱阶段。
 
-9. Lazarus, R. S. (1991). *Emotion and Adaptation.* Oxford University Press.
-10. Smith, C. A., & Lazarus, R. S. (1993). Appraisal components, core relational themes, and emotions. *Cognition and Emotion*, 7(3-4), 233-269.
-11. Marsella, S. C., & Gratch, J. (2009). EMA: a process model of appraisal dynamics. *Cognitive Systems Research*, 10(1), 70-90.
-12. Scherer, K. R. (2001). Appraisal considered as a process of multi-level sequential checking. In K. R. Scherer, A. Schorr, & T. Johnstone (Eds.), *Appraisal Processes in Emotion: Theory, Methods, Research* (pp. 92-120). Oxford University Press.
-13. Mehrabian, A. (1996). Pleasure-Arousal-Dominance: a general framework for describing and measuring individual differences in temperament. *Current Psychology*, 14(4), 261-292.
-14. Fontaine, J. R. J., Scherer, K. R., Roesch, E. B., & Ellsworth, P. C. (2007). The world of emotions is not two-dimensional. *Psychological Science*, 18(12), 1050-1057.
-15. Corr, P. J. (2004). Reinforcement sensitivity theory and personality. *Neuroscience & Biobehavioral Reviews*, 28(3), 317-332.
-16. McNaughton, N., & Corr, R. J. (2004). A two-dimensional neuropsychology of defense: fear/anxiety and defensive distance. *Neuroscience & Biobehavioral Reviews*, 28(3), 285-305.
-17. Zhang, J., Berridge, K. C., Tindell, A. J., Smith, K. S., & Aldridge, J. W. (2009). A neural computational model of incentive salience. *PLOS Computational Biology*, 5(7), e1000437.
-18. Gross, J. J. (2015). Emotion regulation: current status and future prospects. *Psychological Inquiry*, 26(1), 1-26.
-19. Bosse, T., Pontier, M., & Treur, J. (2010). A computational model based on Gross' emotion regulation theory. *Cognitive Systems Research*, 11(3), 211-230.
-20. Gratch, J., & Marsella, S. (2004). A domain-independent framework for modeling emotion. *Cognitive Systems Research*, 5(4), 269-306.
-21. Petter, T., Plaisier, I., Brosschot, J. F., & Verkuil, B. (2025). Emotion regulation strategy choice: a drift-diffusion model approach. *Emotion*, 25(5), 1273-1292.
+## API 输出控制与未来扩展
 
-### 域 3 — 多级记忆系统 + 睡眠巩固 + 激活衰减
+[DeepSeek 接口文档](https://api-docs.deepseek.com/api/create-chat-completion/)和[思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)用于确认当前 API 参数范围。此项目显式关闭 DeepSeek thinking，动态请求温度和长度预算；候选选择是应用层计算，不是神经网络隐藏层干预。没有把服务可能忽略的采样项宣传为有效情感控制。
 
-22. Atkinson, R. C., & Shiffrin, R. M. (1968). Human memory: a proposed system and its control processes. In K. W. Spence & J. T. Spence (Eds.), *The Psychology of Learning and Motivation* (Vol. 2, pp. 89-195). Academic Press.
-23. Baddeley, A. D. (2000). The episodic buffer: a new component of working memory? *Trends in Cognitive Sciences*, 4(11), 417-423.
-24. Klinzing, J. G., Niethard, N., & Born, J. (2019). Mechanisms of systems memory consolidation during sleep. *Nature Neuroscience*, 22(10), 1598-1610.
-25. Brodt, S., Gais, S., Beck, S., Erb, M., Scheffler, K., & Schonauer, M. (2023). Fast track to the neocortex: a memory engram in the posterior parietal cortex. *Neuron*, 111(7), 1050-1075.
-26. Tononi, G., & Cirelli, C. (2014). Sleep and the price of plasticity: from synaptic and cellular homeostasis to memory consolidation and integration. *Neuron*, 81(1), 12-34.
-27. Lewis, P. A., Knoblich, G., & Poe, G. (2018). How memory replay in sleep boosts creative problem-solving. *Trends in Cognitive Sciences*, 22(6), 491-503.
-28. Walker, M. P., & van der Helm, E. (2009). Overnight therapy? The role of sleep in emotional brain processing. *Psychological Bulletin*, 135(5), 731-748.
-29. Pavlik, P. I., & Anderson, J. R. (2005). Practice and forgetting effects on vocabulary memory: an activation-based model of the spacing effect. *Cognitive Science*, 29(4), 559-586.
-30. McGaugh, J. L. (2004). The amygdala modulates the consolidation of memories of emotionally arousing experiences. *Annual Review of Neuroscience*, 27, 1-28.
-31. Bower, G. H. (1981). Mood and memory. *American Psychologist*, 36(2), 129-148.
-32. Conway, M. A., & Pleydell-Pearce, C. W. (2000). The construction of autobiographical memories in the self-memory system. *Psychological Review*, 107(2), 261-288.
+[CAA（ACL 2024）](https://aclanthology.org/2024.acl-long.828/)与[ReFT](https://arxiv.org/abs/2404.03592)说明在可访问模型内部表示时，可以研究激活干预与表示微调。本项目目前没有自托管模型、相关训练或激活控制代码，不把这些研究列为已实现功能。
 
-### 域 4 — 意识理论 + 情绪动力学 + 调节 + 反刍 + 无聊
+## 记忆压缩参考
 
-33. Dehaene, S., Charles, L., King, J.-R., & Marti, S. (2014). Toward a computational theory of conscious processing. *Current Opinion in Neurobiology*, 25, 76-84.
-34. Christoff, K., Irving, Z. C., Fox, K. C. R., Spreng, R. N., & Andrews-Hanna, J. R. (2016). Mind-wandering as spontaneous thought: a dynamic framework. *Nature Reviews Neuroscience*, 17(11), 718-731.
-35. Mildner, J. N., & Tamir, D. I. (2019). Spontaneous thought as an unguided memory retrieval process. *Trends in Cognitive Sciences*, 23(9), 743-753.
-36. Panksepp, J. (1998). *Affective Neuroscience: The Foundations of Human and Animal Emotions.* Oxford University Press.
-37. Bottemanne, H., Morlaas, O., Fossati, P., & Schmidt, L. (2022). A multidimensional approach to mood: from theory to clinical applications. *L'Encephale*, 48(6), 682-699.
-38. Barrett, L. F. (2017). The theory of constructed emotion: an active inference account of interoception and categorization. *Social Cognitive and Affective Neuroscience*, 12(1), 1-23.
-39. Allen, M., Levy, A., Parr, T., & Friston, K. J. (2022). In the body's eye: the computational anatomy of interoceptive inference. *PLOS Computational Biology*, 18(9), e1010490.
-40. Gundem, D., Zhang, J., & Barrett, L. F. (2022). Comparing the constructed emotion theory to basic emotion theory using fMRI activation patterns. *Communications Biology*, 5(1), 1354.
-41. Bonanno, G. A., & Burton, C. L. (2013). Regulatory flexibility: an individual differences perspective on coping and emotion regulation. *Perspectives on Psychological Science*, 8(6), 591-612.
-42. Wang, D., Hagger, M. S., & Chatzisarantis, N. L. D. (2020). Ironic effects of thought suppression: a meta-analysis. *Perspectives on Psychological Science*, 15(3), 778-793.
-43. Treynor, W., Gonzalez, R., & Nolen-Hoeksema, S. (2003). Rumination reconsidered: a psychometric analysis. *Cognitive Therapy and Research*, 27(3), 247-259.
-44. Danckert, J., Hammerschmidt, T., Marty-Dugas, J., & Smilek, D. (2025). Boredom: a reward-prediction error account. *Communications Psychology*, 3, 16.
-45. Westgate, E. C., & Wilson, T. D. (2018). Boring thoughts and bored minds: the MAC model of boredom and cognitive engagement. *Psychological Review*, 125(5), 689-713.
-
-### 域 5 — 社会认知 + 自我模型 + LLM Agent 架构
-
-46. Baker, C. L., Jara-Ettinger, J., Saxe, R., & Tenenbaum, J. B. (2017). Rational quantitative attribution of beliefs, desires, and percepts in human mentalizing. *Nature Human Behaviour*, 1, 0064.
-47. Kosinski, M. (2024). Evaluating large language models in theory of mind tasks. *PNAS*, 121(44), e2405460121.
-48. Strachan, J. W. A., Albergo, D., Borghini, G., Pansardi, O., Scaliti, E., Gupta, S., Saxena, K., Rufo, A., Panzeri, S., Manzi, G., Graziano, M. S. A., & Becchio, C. (2024). Testing theory of mind in large language models and humans. *Nature Human Behaviour*, 8, 1285-1295.
-49. Gallese, V., Keysers, C., & Rizzolatti, G. (2004). A unifying view of the basis of social cognition. *Trends in Cognitive Sciences*, 8(9), 396-403.
-50. Heyes, C. (2018). Empathy is not in our genes. *Neuroscience & Biobehavioral Reviews*, 95, 499-507.
-51. Park, J. S., O'Brien, J. C., Cai, C. J., Morris, M. R., Liang, P., & Bernstein, M. S. (2023). Generative agents: interactive simulacra of human behavior. In *Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology* (UIST '23). Best Paper Award.
-52. Wang, G., Xie, Y., Jiang, Y., Mandlekar, A., Xiao, C., Zhu, Y., Fan, L., & Anandkumar, A. (2023). Voyager: an open-ended embodied agent with large language models. *NeurIPS 2023.*
-53. McAdams, D. P., & Pals, J. L. (2006). A new Big Five: fundamental principles for an integrative science of personality. *American Psychologist*, 61(3), 204-217.
-54. Hirsh, J. B., Mar, R. A., & Peterson, J. B. (2013). Psychological entropy: a framework for understanding uncertainty-related anxiety. *Behavioral and Brain Sciences*, 36(3).
-55. Gagliardi, M. (2022). Attachment as a multidimensional control system. *Frontiers in Psychology*, 13, 844012.
-56. Pichiecchio, A., Sanguineti, V., & Becchio, C. (2026). Attachment as active inference: a computational model. *Frontiers in Psychology*.
-57. Faghihi, U., & Estey, C. (2015). A dual-process model of Kahneman's thinking, fast and slow, implemented in ACT-R. *Biologically Inspired Cognitive Architectures*, 14, 33-48.
-58. PRIME (2025). Planning and Retrieval-Integrated Memory Engine: on-demand arbitration for deep reasoning. arXiv:2509.22315.
-
----
-
+[ranxianglei/billion-context](https://github.com/ranxianglei/billion-context)是摘要、来源保留与展开思路的参考。当前实现仍为本地单一图谱与有损摘要视图，没有复制其完整代理调度或声称达到同等规模。情绪和关系对应通过原始事件与评估边保留，压缩不会新增心理证据。

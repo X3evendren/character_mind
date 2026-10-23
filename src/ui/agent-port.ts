@@ -11,6 +11,8 @@ export type AgentSnapshot = ReturnType<CharacterAgent["getStateSnapshot"]>;
 
 export interface AgentPort {
   runStream(input: string, opts?: RunOptions): AsyncGenerator<TurnEvent>;
+  getInitiative?(now?: number): { sourceEventId: string; policy: string; reason: string } | undefined;
+  runInitiative?(opts?: RunOptions): AsyncGenerator<TurnEvent>;
   getStateSnapshot(): AgentSnapshot;
   shutdown(): Promise<void>;
   readonly config: { name: string };
