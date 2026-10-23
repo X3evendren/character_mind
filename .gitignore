@@ -10,6 +10,11 @@ tool-results/
 eval/results/
 config/skills/
 trace-data/
+data/
+.audit/
+.audit-cache/
+.superpowers/
+*.stackdump
 
 # 环境变量与密钥
 .env

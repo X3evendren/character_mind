@@ -9,9 +9,9 @@ import { OpenAICompatProvider } from "../agent/provider";
 import { AnthropicProvider } from "../agent/provider-anthropic";
 import { detectProvider, type ProviderSpec } from "../agent/provider-registry";
 import { Tracer, JsonlExporter, ConsoleExporter, CompositeExporter } from "../telemetry";
-import { CheckpointManager, RecoveryManager } from "../recovery";
 import { ContinuousLoop } from "../agent/loop";
 import type { AgentPort } from "./agent-port";
+import type { ToolDef, ToolContext } from '../tools/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = resolve(__dirname, "../../config");
@@ -21,6 +21,9 @@ export interface CreateAgentEnv {
   baseUrl?: string;
   model?: string;
   configDir?: string;
+  psychModel?: string;
+  dataDir?: string;
+  confirmTool?: (tool: ToolDef, params: unknown, ctx: ToolContext) => Promise<boolean>;
 }
 
 /**
@@ -35,7 +38,6 @@ export interface CreatedAgent {
   agent: AgentPort;
   agentName: string;
   loop: ContinuousLoop;
-  checkpointManager: CheckpointManager;
 }
 
 /**
@@ -45,7 +47,7 @@ export async function createAgent(env: CreateAgentEnv): Promise<CreatedAgent> {
   const configDir = env.configDir ?? DEFAULT_CONFIG_DIR;
   const apiKey = env.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "";
   const baseUrl = env.baseUrl ?? process.env.DEEPSEEK_API_BASE ?? "https://api.deepseek.com";
-  const model = env.model ?? process.env.GEN_MODEL ?? "LongCat-2.0";
+  const model = env.model ?? process.env.GEN_MODEL ?? "deepseek-flash";
 
   const spec = selectProviderSpec({ apiKey, baseUrl, model });
   // Auto-detect Anthropic backend: URL contains /anthropic path
@@ -55,34 +57,32 @@ export async function createAgent(env: CreateAgentEnv): Promise<CreatedAgent> {
   const provider = isAnthropic
     ? new AnthropicProvider(model, apiKey, baseUrl)
     : new OpenAICompatProvider(model, apiKey, baseUrl);
+  const psychModel = env.psychModel ?? process.env.PSYCH_MODEL ?? model;
+  const psychProvider = isAnthropic
+    ? new AnthropicProvider(psychModel, apiKey, baseUrl)
+    : new OpenAICompatProvider(psychModel, apiKey, baseUrl);
 
   const tracer = new Tracer(
     new CompositeExporter(new JsonlExporter(), new ConsoleExporter()),
   );
-  const checkpointManager = new CheckpointManager();
-  const recovery = new RecoveryManager(checkpointManager);
+
 
   const agent = new CharacterAgent({
     configDir,
     genProvider: provider,
-    psychProvider: provider,
+    psychProvider,
     genModel: model,
-    psychModel: model,
+    psychModel,
     tracer,
-    checkpointManager,
+    dataDir: env.dataDir,
   });
+  if (env.confirmTool) agent.toolRegistry.confirmTool = env.confirmTool;
   await agent.initialize();
-
-  // Recovery check
-  const decision = recovery.detect();
-  if (decision.action === "resume" && decision.checkpoint) {
-    await agent.restoreFromCheckpoint(recovery.resume(decision.checkpoint));
-  }
 
   const loop = new ContinuousLoop(30_000);
   loop.start(agent);
 
-  return { agent, agentName: agent.config.name, loop, checkpointManager };
+  return { agent, agentName: agent.config.name, loop };
 }
 
 export { DEFAULT_CONFIG_DIR };

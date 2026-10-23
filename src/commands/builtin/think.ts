@@ -7,7 +7,7 @@ import type { PromptCommand, CommandContext } from "../types";
 export const thinkCommand: PromptCommand = {
   type: "prompt",
   name: "think",
-  description: "Ask the character to reflect deeply on something",
+  description: "围绕一件事进行角色反思",
   aliases: ["reflect"],
   getPromptForCommand(args: string, ctx: CommandContext): string {
     const name = ctx.agent.config.name;
@@ -20,7 +20,7 @@ ${name}，请用你的角色身份，对以下内容进行深度反思：
 请从你的内心出发，探索：
 1. 这件事触动了你的哪些情感
 2. 你内心有什么不愿意承认但真实存在的感受
-3. 这件事与你的誓约、自我认知有何关联
+3. 这件事与已有记忆、当下判断有什么联系，不补造经历
 
 用你的方式表达。不是分析，而是呈现。`;
   },

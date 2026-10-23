@@ -3,11 +3,10 @@ import type { LocalCommand, CommandContext } from "../types";
 export const quitCommand: LocalCommand = {
   type: "local",
   name: "quit",
-  description: "Exit Character Mind",
+  description: "结束请求、保存记忆并退出",
   aliases: ["exit", "q"],
   immediate: true,
   async call(_args: string, ctx: CommandContext) {
-    await ctx.agent.shutdown();
-    process.exit(0);
+    return '请使用 Ctrl+C 结束请求、保存记忆并退出。';
   },
 };

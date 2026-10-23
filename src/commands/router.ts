@@ -58,16 +58,6 @@ export class CommandRouter {
       return this.executeCommand(cmd, parsed.args, ctx);
     }
 
-    // Layer 2: Prefix match (longest match first)
-    const allCmds = getCommands(ctx);
-    const prefixMatches = allCmds
-      .filter(c => parsed.name.startsWith(c.name) || c.aliases?.some(a => parsed.name.startsWith(a)))
-      .sort((a, b) => b.name.length - a.name.length);
-
-    if (prefixMatches.length > 0) {
-      return this.executeCommand(prefixMatches[0], parsed.args, ctx);
-    }
-
     // Layer 3: Interceptors
     for (const interceptor of this.interceptors) {
       const result = interceptor(input, ctx);
@@ -76,7 +66,7 @@ export class CommandRouter {
 
     return {
       type: "unknown",
-      output: `Unknown command: /${parsed.name}\nType /help to see available commands.`,
+      output: `未知命令：/${parsed.name}。输入 /help 查看帮助。`,
     };
   }
 

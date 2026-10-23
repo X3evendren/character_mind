@@ -11,6 +11,7 @@ export class ToolRegistry {
   private resultStorage = new ResultStorage(process.cwd());
   private terminalConfirm = new TerminalConfirm();
   guardPipeline?: GuardPipeline;
+  confirmTool?: (tool: ToolDef, params: unknown, ctx: ToolContext) => Promise<boolean>;
 
   register(tool: ToolDef): void {
     this.tools.set(tool.name, tool);
@@ -74,6 +75,7 @@ export class ToolRegistry {
 
   /** Full execution pipeline: validate → permission → execute → format → store. */
   async execute(name: string, params: any, ctx: ToolContext): Promise<ToolResult> {
+    ctx.signal?.throwIfAborted();
     const tool = this.get(name);
     if (!tool) {
       return { success: false, error: `Unknown tool: ${name}`, output: `Error: unknown tool "${name}"`, truncated: false };
@@ -92,7 +94,8 @@ export class ToolRegistry {
       return { success: false, error: permResult.reason, output: `Denied: ${permResult.reason}`, truncated: false };
     }
     if (permResult.behavior === "ask") {
-      const approved = await this.terminalConfirm.confirm(tool, parsed.data, ctx);
+      const approved = await (this.confirmTool ? this.confirmTool(tool, parsed.data, ctx) : this.terminalConfirm.confirm(tool, parsed.data, ctx));
+      ctx.signal?.throwIfAborted();
       if (!approved) {
         return { success: false, error: "User denied", output: "Denied by user.", truncated: false };
       }
@@ -110,6 +113,7 @@ export class ToolRegistry {
     }
 
     // Step 3: Execute
+    ctx.signal?.throwIfAborted();
     let result: ToolResult;
     try {
       result = await tool.execute(parsed.data, ctx);

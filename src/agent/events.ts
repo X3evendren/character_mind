@@ -14,32 +14,18 @@ export type TurnEvent =
   | { type: "reasoning"; text: string; ts: number }
   | { type: "tool_start"; callId: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_end"; callId: string; tool: string; success: boolean; outputPreview: string; durationMs: number; truncated: boolean }
-  | { type: "cold_layer_start"; layer: 0 | 1 | 2; name: string; ts: number }
-  | { type: "cold_layer_end"; layer: 0 | 1 | 2; name: string; success: boolean; durationMs: number; summary: string }
-  | { type: "cold_skipped"; reason: string }
   | { type: "error"; phase: TurnPhase; message: string; recoverable: boolean }
   | { type: "done"; turnId: number; elapsedMs: number; totalTokens: number };
 
-// ── Turn phases (9 stages, strict order) ──
+// ── Cognitive turn phases ──
 
 export type TurnPhase =
   | "guard_input"
-  | "restore_memory"
-  | "read_state"
-  | "build_prompt"
+  | "appraise"
+  | "decide"
   | "generate"
   | "guard_output"
-  | "update_instant"
-  | "cold_analyze"
-  | "checkpoint";
-
-// ── Cold analysis layer names (3-layer fusion model) ──
-
-export const COLD_LAYER_NAMES: readonly [string, string, string] = [
-  "冷回顾",
-  "维度评估",
-  "深度反思",
-] as const;
+  | "commit_memory";
 
 // ── Run options ──
 

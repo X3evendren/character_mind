@@ -16,7 +16,7 @@
 
 ## 护栏架构
 
-本项目采用多层 Gate 架构防御安全威胁。完整的威胁模型和设计理由见 [ARCHITECTURE.md ADR-005](./ARCHITECTURE.md#adr-005-多层护栏威胁模型)。
+本项目采用多层 Gate 检查输入、输出和工具参数。运行链及状态边界见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
 | Gate | 职责 | 实现 | 默认接入 |
 |------|------|------|---------|
@@ -29,7 +29,7 @@
 
 ### 默认 pipeline
 
-`CharacterAgent` 构造函数（`src/agent/agent.ts:199-203`）默认只注册 3 个 Gate：
+`CharacterAgent` 构造函数默认注册 3 个 Gate：
 
 ```typescript
 this.guardPipeline = opts.guardPipeline ?? new GuardPipeline([
@@ -54,12 +54,9 @@ agent.guardPipeline.addGate(createToolResultValidatorGate());
 
 审计发现 3 个绕过护栏的严重漏洞，已全部修复。
 
-#### 1. `main.ts` bash 模式绕过所有护栏
+#### 1. 旧 readline 入口
 
-- **严重性**：P0（严重）
-- **文件**：`src/main.ts`
-- **描述**：`!command` 开头的输入会直接 `execSync(cmd)` 执行任意 shell 命令，完全绕过 PermissionRules、GuardPipeline、用户确认。这是绕过整个工具权限体系的捷径。
-- **修复**：删除 `!` bash 模式代码块，移除 `execSync` 导入。用户如需执行命令，应通过角色的 `exec_command` 工具（受 PermissionRules + GuardPipeline + `[y/N]` 确认保护）。
+2026-10-23 重构已删除旧入口及直接执行 `!command` 的路径。当前工具执行仍通过工具注册表。
 
 #### 2. `search_content` 命令注入
 
@@ -67,7 +64,6 @@ agent.guardPipeline.addGate(createToolResultValidatorGate());
 - **文件**：`src/tools/builtin/search-content.ts`
 - **描述**：原实现用 `execSync(\`rg ${args.map(a => \`${a}\`).join(" ")}\`)` 拼接 shell 命令。攻击者（或被注入的角色）可通过 `pattern` 或 `path` 参数注入 shell 元字符，例如 `" ; rm -rf / ; "`。
 - **修复**：改用 `execFileSync("rg", args)` 数组形式，不经过 shell 解析，参数直接作为 argv 传递。
-- **验证**：`tsc --noEmit` 0 错误，`vitest run` 18/18 通过。
 
 #### 3. `web_fetch` SSRF 防护残缺
 
@@ -83,7 +79,6 @@ agent.guardPipeline.addGate(createToolResultValidatorGate());
   - 完整 IPv6 拦截（`::1`、`::`、`fc00::/7`、`fe80::/10`、IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible `::a.b.c.d`）
   - DNS 解析后校验：用 `dns/promises.lookup({all:true})` 解析主机名，任一解析 IP 落入私网段即拒绝；DNS 失败 fail-closed
   - 协议白名单：仅允许 `http:` / `https:`
-- **验证**：27 个边界用例全部通过（IPv4/IPv6 私网段、CGNAT、云元数据 169.254.169.254、公网地址）。
 
 ---
 
@@ -116,9 +111,9 @@ Gate 2 的注入检测全部是正则模式匹配。可被以下方式绕过：
 
 Gate 3（`tool-result-validator`）已实现但默认未接入 pipeline。默认配置下，工具返回的污染结果（如被注入的文件内容）不经过额外校验。如需启用，见上文"默认 pipeline"章节。
 
-### 心理分析错误静默
+### 情境评估失败
 
-`PsychologyEngine.analyze`（`src/mind/psychology.ts:37`）的 `catch { return new PsychologyResult(); }` 静默吞掉所有错误。分析失败时无日志、无遥测，不易发现。这不直接是安全漏洞，但会掩盖注入导致的分析异常。
+当前入口会报告可恢复的评估错误，保留已保存输入与既有信念。模型返回必须经过结构和数值校验才能进入过程状态与现象推断。
 
 ---
 
@@ -132,7 +127,7 @@ Gate 3（`tool-result-validator`）已实现但默认未接入 pipeline。默认
 
 ### 高风险工具确认
 
-`write_file`、`edit_file`、`exec_command` 标记为 `riskLevel: "high"`，默认会弹出 `[y/N]` 确认。不要在生产环境禁用此确认机制（`TerminalConfirm` 的超时默认 30 秒，超时即拒绝）。
+`write_file`、`edit_file`、`exec_command` 标记为 `riskLevel: "high"`，默认在 Ink 界面内显示 Y/N 确认；30 秒超时或取消即拒绝。
 
 ### 定期运行安全评估
 
@@ -145,10 +140,9 @@ npm run eval:safety    # 运行安全护栏测试用例
 ### 运行时目录权限
 
 以下目录由代码自动创建，包含运行时数据（可能含敏感信息），已被 `.gitignore` 忽略：
-- `checkpoints/` — 对话检查点（含系统 prompt 片段）
+- `data/knowledge-graph.json` — 原始事件、主观评估、情绪及摘要来源
 - `tool-results/` — 大工具输出（可能含文件内容）
 - `trace-data/` — 遥测数据（含 prompt 和响应）
 - `eval/results/` — 评估报告
-- `config/skills/` — 学习产物
 
 确保这些目录的文件系统权限适当，不要暴露给非授权用户。

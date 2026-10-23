@@ -4,13 +4,13 @@ import { PROVIDERS } from "../../agent/provider-registry";
 export const modelCommand: LocalCommand = {
   type: "local",
   name: "model",
-  description: "Show or switch the current model",
+  description: "查看生成与情境评估模型",
   aliases: ["m"],
-  call(args: string, _ctx: CommandContext) {
+  call(args: string, ctx: CommandContext) {
     if (!args) {
-      return "Current: deepseek-v4-pro (gen) / deepseek-v4-flash (psych)\n\nAvailable providers:\n" +
-        PROVIDERS.map(p => `  ${p.name.padEnd(14)} — ${p.defaultApiBase}`).join("\n");
+      const models = ctx.agent.getModelInfo();
+      return `生成模型：${models.generation}\n情境评估：${models.appraisal}\n修改 GEN_MODEL / PSYCH_MODEL 后重启生效。`;
     }
-    return `Model switching via /model is not yet implemented. Requested: ${args}`;
+    return '请通过 GEN_MODEL / PSYCH_MODEL 配置模型，然后重启。';
   },
 };

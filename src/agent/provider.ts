@@ -30,10 +30,13 @@ export class OpenAICompatProvider implements IProvider {
   public model: string;
   public client: OpenAI;
   public maxRetries: number;
+  private readonly requestOptions: Record<string, unknown>;
 
   constructor(model: string, apiKey: string, baseUrl: string, maxRetries = 2) {
     this.model = model;
     this.maxRetries = maxRetries;
+    // DeepSeek defaults to thinking mode; bounded appraisal and response calls use non-thinking mode.
+    this.requestOptions = new URL(baseUrl).hostname === 'api.deepseek.com' ? { thinking: { type: 'disabled' } } : {};
     this.client = new OpenAI({
       apiKey: apiKey || "not-needed",
       baseURL: baseUrl,
@@ -50,6 +53,7 @@ export class OpenAICompatProvider implements IProvider {
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     const resp = await this.client.chat.completions.create({
+      ...this.requestOptions,
       model: _model || this.model,
       messages: messages as any,
       temperature,
@@ -65,7 +69,7 @@ export class OpenAICompatProvider implements IProvider {
     // reasoning_content or reasoning, while content is empty.
     const rawMsg = choice.message as any;
     const thinkingOutput = rawMsg?.reasoning_content || rawMsg?.reasoning || "";
-    const content = choice.message?.content || thinkingOutput || "";
+    const content = choice.message?.content || "";
 
     return {
       content,
@@ -86,6 +90,7 @@ export class OpenAICompatProvider implements IProvider {
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     const resp = await this.client.chat.completions.create({
+      ...this.requestOptions,
       model: _model || this.model,
       messages: messages as any,
       temperature,

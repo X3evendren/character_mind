@@ -41,7 +41,7 @@ export interface CronPayload {
  */
 export interface CognitiveEvent {
   /** Module to trigger */
-  module: "drive_check" | "deep_reflection" | "boredom_check" | "horizon_review" | "memory_consolidation" | "mood_update";
+  module: string;
   /** Additional parameters for the module */
   params?: Record<string, unknown>;
 }

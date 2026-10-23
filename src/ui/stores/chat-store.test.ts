@@ -4,8 +4,7 @@ import { reduceTurnEvent, type ChatState } from "./chat-store";
 function freshState(): ChatState {
   return {
     turns: [], currentTurnId: null, isGenerating: false, statusText: "",
-    notifications: [], debugMode: false, pendingToolCalls: new Map(),
-    turnStartMs: null, lastTokenMs: null,
+    debugMode: false, pendingToolCalls: new Map(),
   };
 }
 
@@ -15,7 +14,7 @@ function stateWithTurn(state: ChatState): ChatState {
     userMessage: { content: "hi", timestamp: Date.now() },
     blocks: [], status: "streaming" as const, timestamp: Date.now(),
   };
-  return { ...state, turns: [turn], currentTurnId: "turn_1", isGenerating: true, turnStartMs: Date.now() };
+  return { ...state, turns: [turn], currentTurnId: "turn_1", isGenerating: true };
 }
 
 describe("reduceTurnEvent", () => {
@@ -82,13 +81,13 @@ describe("reduceTurnEvent", () => {
     expect(s.currentTurnId).toBeNull();  // turn closed
   });
 
-  it("error marks turn interrupted and adds notification", () => {
+  it("error marks turn interrupted and preserves the error in conversation", () => {
     let s = stateWithTurn(freshState());
     s = reduceTurnEvent(s, { type: "error", phase: "generate", message: "boom", recoverable: false });
     const turn = s.turns[0];
     expect(turn.status).toBe("interrupted");
-    expect(s.notifications).toHaveLength(1);
-    expect(s.notifications[0].type).toBe("error");
+    expect(turn.blocks[0].type).toBe("error");
+    expect(turn.blocks[0].content).toContain("boom");
     expect(s.isGenerating).toBe(false);
   });
 });

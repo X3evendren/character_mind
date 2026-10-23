@@ -1,121 +1,68 @@
-# Character Mind v3
+# Character Mind
 
-> 一个"不真实的完美伴侣"——基于认知心理学建模的 AI 角色对话框架，TypeScript 重写。
+一个围绕角色主观情绪、结构化记忆和回应策略的 TypeScript 项目。
 
-Character Mind v3 不是一个普通的聊天机器人。它实现了完整的"心智—记忆—护栏—生成"流水线：用 PAD 情感模型、驱力理论、依恋理论和饱和度模型来塑造角色的内在状态，用五级记忆层级（工作→短期→长期→核心图谱→归档）来维持跨会话的连贯性，用多层护栏来对抗提示注入和 RLHF 安全话术。
+当前核心已改为单一认知流程：记录事件 → 情境评估 → 信念与过程状态更新 → 现象推断 → 策略选择 → 回应 → 结果入图。原有冷热心理缓存、饱和度参数系统和五层记忆晋升链已删除。
 
-## 功能特性
+## 情绪与记忆
 
-- **认知心理学建模**：7 维心智状态向量（PAD 情感 + 控制 + 依恋 + 防御 + 目标张力），5 维驱力（好奇/助人/成就/连接/自主）
-- **冷热路径分离**：当轮只做生成，异步冷路径做四层级联心理分析（L0 情感底色 → L1 时间感 → L2 心理学 → L3 叙事自我），结果通过 `coldCache` 跨轮传递
-- **饱和度驱动参数**：单一 `saturation` 变量派生 32 个 lerp 参数（温度、verbosity、表达力、亲密精度等），保证参数间协方差一致
-- **五级记忆 + 代谢**：Working(50) → STM(200) → LTM(500) → CoreGraph(500/2000) → Archive(∞)，配合 daydream / quickSleep / fullSleep 三级巩固
-- **多层护栏**：正则拒绝 + 提示注入检测 + 工具参数校验 + 连续失败追踪
-- **Span-based 流式生成**：FLUID → STABLE → LOCKED 三层 span + 工具调用循环
-- **崩溃恢复**：Root State（可持久化）/ Derived State（可重算）分离 + 检查点校验和
-- **工具系统**：8 个内置工具（read_file / write_file / edit_file / exec_command / search_files / search_content / web_search / web_fetch）
-- **Ink TUI**：React + Ink 终端界面，支持 Span 渲染、历史搜索、Ctrl+R
-- **反-RLHF 锚定**：ALIGN 替换 + 动作描写过滤 + 人格锚定，目标是真实而非安全
+- 单一知识图谱保存事件、实体、主观关系、评估、过程状态、现象、决策和摘要；原始事件与推断分开。
+- 有限情境信念过滤器维护安全、威胁、失落、修复和不确定性。模型评估按可靠性降权，同一事件不会重复计入证据。
+- 底层过程维护效价、唤醒、情境绑定、能动性、感受可及性、自我连续性和记忆激活；现象层统一推断情绪体验、记忆共鸣、闪回样再体验、解离样疏离。每个现象记录强度、支持度、依据、来源与发生／减弱／消退过程；没有独立累加的“闪回值”“解离值”。
+- `/compress` 请求压缩旧对话，可在 API 层随时请求，等待当前回合结束后提交。最近 8 条事件、未完成回合和工具结果保持原文。摘要保留来源，`/expand <ID>` 或 `graph.expand(id)` 可恢复原记录。
+- 启动时只读导入原有 `stm.db`、`ltm.db`、`archive.db`、`core.db`，完整保留旧行及来源；不删除旧数据库。
+- TUI 提供对话、心智、记忆、帮助四个视图；心智视图展示现象、过程、信念、策略理由和来源，记忆视图支持节点检索和摘要展开。
 
-## 快速开始
+## 运行
 
-### 环境要求
+要求 Node.js 24 或更新版本、npm，以及工具搜索所需的 ripgrep。
 
-- Node.js ≥ 20
-- npm
-- ripgrep（`search_content` 工具依赖，[安装指南](https://github.com/BurntSushi/ripgrep)）
-
-### 配置
-
-通过环境变量配置 LLM 后端（DeepSeek OpenAI 兼容 API）：
-
-```bash
-# Windows (cmd)
-set DEEPSEEK_API_KEY=sk-你的key
-set DEEPSEEK_API_BASE=https://api.deepseek.com     # 可选，默认即此值
-set GEN_MODEL=deepseek-v4-pro                      # 可选，生成模型
-set PSYCH_MODEL=deepseek-v4-flash                  # 可选，心理分析模型
-
-# Linux / macOS
-export DEEPSEEK_API_KEY=sk-你的key
-```
-
-> ⚠️ API key 通过环境变量传入，不要写入 `.env` 并提交到 git。`.env*` 已被 `.gitignore` 忽略。
-
-### 安装与运行
-
-```bash
-npm install
-
-# 启动（自动检测终端：TTY → Ink TUI，非 TTY → readline 降级）
+```powershell
+npm ci
+$env:DEEPSEEK_API_KEY = '你的密钥'
+$env:GEN_MODEL = 'deepseek-flash'
+$env:PSYCH_MODEL = 'deepseek-flash'
 npm run dev
-
-# 带调试追踪
-TRACE_CONSOLE=1 npm run dev
 ```
 
-### 测试与评估
+可选环境变量：`DEEPSEEK_API_BASE` 指定兼容接口；`MEMORY_DB_DIR` 指定数据目录，默认 `./data`。每个角色使用独立目录，当前文件存储按单进程写入设计。启动需要交互式终端。
 
-```bash
-npm test                    # 运行单元测试（vitest）
-npm run eval                # 运行全部评估用例
-npm run eval:safety         # 仅安全护栏测试
-npm run eval:personality    # 仅人格一致性测试
+默认接口为 DeepSeek，生成与评估默认使用 `deepseek-flash`。针对官方 DeepSeek 接口显式使用非思考模式，给结构化评估与回应保留输出预算；其他兼容服务不附加这个参数。密钥只从环境或调用参数读取，不保存到图谱。
+
+## TUI 操作
+
+| 操作 | 用途 |
+| --- | --- |
+| Tab / Shift+Tab | 切换对话、心智、记忆、帮助；输入 `/命令` 时 Tab 补全 |
+| Enter / Alt+Enter | 发送 / 换行；多行粘贴保留为草稿 |
+| PgUp / PgDn、Ctrl+↑ / ↓ | 按页或逐行滚动当前视图 |
+| Esc | 取消当前回合；记忆详情中返回列表 |
+| Ctrl+G / Ctrl+F | 查看心智 / 搜索图谱 |
+| Ctrl+K、`/compress` | 请求压缩；正在对话时排队等待稳定边界 |
+| `/memory summary`、`/search 关键词` | 筛选摘要或搜索节点原文、结构与关系 |
+| 记忆视图 ↑↓ / Enter | 选择节点 / 查看内容、关联评估与原始来源 |
+| `/expand <ID>` | 展开节点来源，结果保留在对话显示记录中 |
+| `/clear`、Ctrl+L | 清空显示，不删除图谱记忆 |
+| Ctrl+C、`/quit` | 结束当前请求、等待压缩、保存后退出 |
+
+宽屏同时显示心智侧栏；窄屏通过视图切换保留相同能力。最低窗口为 36×12。命令输出和错误可以滚动查看；显示区保留最近 50 条回合/命令记录，更早的对话仍可从图谱查找。需要确认的工具在界面内显示参数，以 Y / N 操作；超时或取消视为拒绝。
+
+情境评估统一使用 `PSYCH_MODEL` 对应的 LLM，以固定 JSON 契约返回情境分布、关系结构、关系三元组、可控性、情境绑定与依据。有明确角色体验证据时可返回 `experience` 描述感受可及性和自我连续性；模型不直接给闪回或解离打分。客户端校验字段和数值；格式错误最多纠正一次，两次请求共享 20 秒时限。失败时保留输入与已有信念并报告降级。
+
+结构化输出采用提示约束加本地校验，兼容现有模型接口；不依赖专用决策服务或额外密钥。模型自报置信度仍需领域校准。
+
+## 验证
+
+```powershell
+npm run test:cognition  # Node 内置测试，无需第三方依赖
+npm test               # 原有 Vitest 测试，需要安装依赖
+npm run typecheck      # 源代码和新增测试的类型检查
+npm run test:tui       # Ink 实际渲染、按键、会话与记忆操作测试
+npm run test:live      # 使用环境中的密钥进行真实模型联调，会发起模型请求
 ```
 
-> **注意**：当前测试覆盖严重不足，仅 `json-parser.test.ts` 1 个测试文件 18 用例。详见 [PROJECT.md](./PROJECT.md#测试现状)。
+新核心与入口测试覆盖：证据去重、重启恢复、结构触发、闪回与解离共存、时间步一致性、压缩展开、旧数据库导入、LLM 结构化契约、生成前更新、评估失败和中断保存、输出拦截、工具证据。
 
-## 斜杠命令
+2026-10-23 新现象模型已通过 37 项核心／入口测试、142 项 Vitest 测试和类型检查；真实 DeepSeek 联调覆盖 TUI 中连续 5 轮评估与回应、跨轮代号回忆、压缩、来源逐条展开、心智／记忆视图、退出及现象状态重启恢复。本地报告由测试写入 `.audit/live-smoke-result.json`，运行数据不会入库。自动化测试与这些路径验证不等于心理学参数已完成校准。
 
-| 命令 | 功能 |
-|------|------|
-| `/help` | 显示帮助 |
-| `/stats` | 饱和度/驱力/参数状态 |
-| `/model` | 切换模型 |
-| `/dream` | 触发记忆巩固 |
-| `/think 问题` | 深度推理（注入反思提示词）|
-| `/quit` | 退出 |
-
-## 配置文件
-
-`config/` 目录下的 Markdown 文件定义角色的"出厂设置"，由 `src/agent/config-loader.ts` 解析：
-
-| 文件 | 用途 |
-|------|------|
-| `config/assistant.md` | 角色定义：身份、核心驱动、人格、情感、行为准则、反-RLHF 锚定 |
-| `config/memory.md` | 记忆参数：容量、衰减半衰期、升级阈值、代谢周期 |
-| `config/tools.md` | 工具定义：参数、风险等级、权限 |
-
-> `config/skills/` 是运行时自动生成的学习产物目录（默认技能 + LLM 演化技能），已被 `.gitignore` 忽略，不应手工编辑或提交。
-
-## 项目状态与已知限制
-
-本项目是**设计雄心远超工程成熟度**的原型，以下为已知技术债（详见 [ARCHITECTURE.md](./ARCHITECTURE.md#技术债登记)）：
-
-- **测试覆盖 < 2%**：安全护栏等关键代码零测试覆盖
-- **`GenerationController` 未集成**：`src/generation/controller.ts`（263 行）定义了中断/重排机制，但实际运行路径绕过它
-- **`strict: false`**：tsconfig 关闭了严格模式，145 处 `any` 类型
-- **`PostFilter` 与 `regex-deny` 重复**：两处维护相同的 ALIGN 表和动作模式正则
-- **`runColdPath` 双重调用风险**：若 GenerationController 被启用，会触发双重冷分析
-- **提示注入防护仅为正则**：可被编码、改写绕过，Gate 4（LLM-as-Judge）预留未实现
-
-## 文档索引
-
-| 文档 | 内容 |
-|------|------|
-| [PROJECT.md](./PROJECT.md) | 完整项目结构解析、数据流全景、目录详解 |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 架构决策记录（ADR-001 ~ ADR-010）|
-| [SECURITY.md](./SECURITY.md) | 安全策略、已修复漏洞、已知限制、漏洞报告流程 |
-| [CHANGELOG.md](./CHANGELOG.md) | 版本变更记录 |
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 语言 | TypeScript（ESNext / ESM）|
-| 运行时 | Node.js + tsx |
-| LLM 后端 | DeepSeek（V4 Pro 生成 + Flash 心理分析），OpenAI 兼容协议 |
-| 记忆 | SQLite (better-sqlite3) + FTS5 全文搜索 |
-| TUI | React + Ink |
-| 测试 | Vitest |
-| 校验 | Zod |
+详细设计与当前局限见 [ARCHITECTURE.md](./ARCHITECTURE.md)。当前是可运行的工程模拟基线；情绪公式与策略权重尚未经过领域数据校准，不声称完整复现人脑或临床状态。

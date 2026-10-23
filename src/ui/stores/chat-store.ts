@@ -2,6 +2,7 @@
  * Chat Store — Turn/Block 执行图结构。
  * reduceTurnEvent 是独立纯函数，store action dispatchEvent 一行调用。
  */
+import type { AgentSnapshot } from '../agent-port';
 import { create } from "zustand";
 import type { TurnEvent, TurnPhase } from "../../agent/events";
 
@@ -30,6 +31,7 @@ export interface Block {
 
 export interface Turn {
   id: string;
+  kind?: 'dialogue' | 'command';
   turnId: number;
   userMessage: { content: string; timestamp: number };
   blocks: Block[];
@@ -37,13 +39,7 @@ export interface Turn {
   timestamp: number;
   elapsedMs?: number;
   totalTokens?: number;
-  stateBadge?: { pad?: { pleasure: number; arousal: number; dominance: number } };
-}
-
-export interface Notification {
-  id: string;
-  type: "info" | "success" | "warning" | "error";
-  message: string;
+  stateBadge?: AgentSnapshot['mind'];
 }
 
 export interface ChatState {
@@ -51,11 +47,8 @@ export interface ChatState {
   currentTurnId: string | null;
   isGenerating: boolean;
   statusText: string;
-  notifications: Notification[];
   debugMode: boolean;
   pendingToolCalls: Map<string, string>; // callId -> blockId
-  turnStartMs: number | null;
-  lastTokenMs: number | null; // 最近一次 text_delta 的时间(ms)，用于 stalled 检测
 }
 
 const initialState: ChatState = {
@@ -63,11 +56,8 @@ const initialState: ChatState = {
   currentTurnId: null,
   isGenerating: false,
   statusText: "",
-  notifications: [],
   debugMode: false,
   pendingToolCalls: new Map(),
-  turnStartMs: null,
-  lastTokenMs: null,
 };
 
 // ── Helpers ──
@@ -113,16 +103,6 @@ function nextBlockIdState(state: ChatState): { id: string; state: ChatState } {
   return { id, state };
 }
 
-function addNotificationToState(state: ChatState, type: Notification["type"], message: string): ChatState {
-  return {
-    ...state,
-    notifications: [
-      ...state.notifications.slice(-4),
-      { id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, type, message },
-    ],
-  };
-}
-
 /**
  * 事件归约纯函数 — 给定 state + event，返回新 state。
  * 可单测、可回放。不依赖 store。Turn 由 submitUserMessage 创建，
@@ -136,7 +116,6 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         ...state,
         isGenerating: true,
         statusText: `${event.phase}`,
-        turnStartMs: state.turnStartMs ?? Date.now(),
       };
     }
     case "phase_end": {
@@ -146,7 +125,7 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
       const turn = getCurrentTurn(state);
       if (!turn) return state;
       const lastFinalIdx = lastBlockIndexOf(turn, "final");
-      const withToken = { ...state, lastTokenMs: Date.now() };
+      const withToken = state;
       if (lastFinalIdx !== -1 && turn.blocks[lastFinalIdx].status === "streaming") {
         return updateCurrentTurn(withToken, (t) => {
           const blocks = t.blocks.slice();
@@ -222,44 +201,6 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         ),
       }));
     }
-    case "cold_layer_start": {
-      const { id, state: nextState } = nextBlockIdState(state);
-      const block: Block = {
-        id,
-        type: "reasoning",
-        content: "",
-        status: "streaming",
-        collapsed: true,
-        summary: event.name,
-      };
-      return appendBlock(nextState, block);
-    }
-    case "cold_layer_end": {
-      // 找到最后一个 summary 匹配 event.name 的 reasoning 块，追加 summary 到 content
-      const turn = getCurrentTurn(state);
-      if (!turn) return state;
-      let targetIdx = -1;
-      for (let i = turn.blocks.length - 1; i >= 0; i--) {
-        const b = turn.blocks[i];
-        if (b.type === "reasoning" && b.summary === event.name) {
-          targetIdx = i;
-          break;
-        }
-      }
-      if (targetIdx === -1) return state;
-      return updateCurrentTurn(state, (t) => {
-        const blocks = t.blocks.slice();
-        blocks[targetIdx] = {
-          ...blocks[targetIdx],
-          content: blocks[targetIdx].content + event.summary,
-          status: "done",
-        };
-        return { ...t, blocks };
-      });
-    }
-    case "cold_skipped": {
-      return state;
-    }
     case "error": {
       const { id, state: withBlockId } = nextBlockIdState(state);
       const errorBlock: Block = {
@@ -269,13 +210,14 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         status: "done",
       };
       let nextState = appendBlock(withBlockId, errorBlock);
+      if (event.recoverable) return nextState;
       // 标记当前 turn 为 interrupted
-      nextState = updateCurrentTurn(nextState, (t) => ({ ...t, status: "interrupted" }));
-      // 添加通知
-      nextState = addNotificationToState(nextState, "error", event.message);
+      nextState = updateCurrentTurn(nextState, (t) => ({ ...t, status: "interrupted", blocks: t.blocks.map(b => ({ ...b, status: 'done' })) }));
       return {
         ...nextState,
         isGenerating: false,
+        currentTurnId: null, pendingToolCalls: new Map(),
+        statusText: '已中断，可继续输入',
       };
     }
     case "done": {
@@ -285,15 +227,14 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
         status: "completed",
         elapsedMs: event.elapsedMs,
         totalTokens: event.totalTokens,
+        blocks: t.blocks.map(b => ({ ...b, status: 'done' })),
       }));
       return {
         ...nextState,
         isGenerating: false,
         currentTurnId: null, // turn 已关闭
         pendingToolCalls: new Map(),
-        turnStartMs: null,
-        lastTokenMs: null,
-        statusText: `第${event.turnId}轮 ${elapsedSec}秒 ${event.totalTokens}词`,
+        statusText: `第 ${event.turnId} 轮完成 · ${elapsedSec} 秒${event.totalTokens > 0 ? ` · ${event.totalTokens} tokens` : ''}`,
       };
     }
     default: {
@@ -307,14 +248,22 @@ export function reduceTurnEvent(state: ChatState, event: TurnEvent): ChatState {
 interface ChatStore extends ChatState {
   dispatchEvent: (event: TurnEvent) => void;
   submitUserMessage: (text: string) => void;
-  setTurnStateBadge: (pad: { pleasure: number; arousal: number; dominance: number }) => void;
-  addNotification: (type: Notification["type"], message: string) => void;
+  setTurnStateBadge: (mind: AgentSnapshot['mind']) => void;
   clearMessages: () => void;
   toggleDebugMode: () => void;
+  addCommandResult: (command: string, output: string, error?: boolean) => void;
 }
 
 export const useChatStore = create<ChatStore>((set) => ({
   ...initialState,
+  addCommandResult: (command, output, error = false) => set(state => ({
+    turns: [...state.turns, {
+      id: turnId(), kind: 'command' as const, turnId: -1,
+      userMessage: { content: command, timestamp: Date.now() }, timestamp: Date.now(),
+      blocks: [{ id: blockId(), type: error ? 'error' as const : 'final' as const, content: output, status: 'done' as const }],
+      status: 'completed' as const,
+    }].slice(-MAX_TURNS),
+  })),
   dispatchEvent: (event) => set((state) => reduceTurnEvent(state, event)),
   submitUserMessage: (text) =>
     set((state) => {
@@ -332,31 +281,21 @@ export const useChatStore = create<ChatStore>((set) => ({
         turns: [...state.turns, turn].slice(-MAX_TURNS),
         currentTurnId: id,
         isGenerating: true,
-        turnStartMs: Date.now(),
       };
     }),
-  setTurnStateBadge: (pad) =>
+  setTurnStateBadge: (mind) =>
     set((state) => {
       // done 事件会清空 currentTurnId，此时回退到最后一个 turn(刚完成的轮次)，
-      // 以便在 turn 收尾后仍能盖上最终 PAD 状态徽章。
+      // 在 turn 收尾后记录过程状态与现象快照。
       const targetId = state.currentTurnId ?? state.turns[state.turns.length - 1]?.id;
       if (!targetId) return state;
       return {
         ...state,
         turns: state.turns.map((t) =>
-          t.id === targetId ? { ...t, stateBadge: { pad } } : t,
+          t.id === targetId ? { ...t, stateBadge: mind } : t,
         ),
       };
     }),
-  addNotification: (type, message) =>
-    set((state) => {
-      const id = `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const notifications = [...state.notifications.slice(-4), { id, type, message }];
-      setTimeout(() => {
-        set((s) => ({ ...s, notifications: s.notifications.filter((n) => n.id !== id) }));
-      }, 4000);
-      return { ...state, notifications };
-    }),
-  clearMessages: () => set({ ...initialState }),
+  clearMessages: () => set(state => state.isGenerating ? state : { ...initialState, debugMode: state.debugMode }),
   toggleDebugMode: () => set((state) => ({ ...state, debugMode: !state.debugMode })),
 }));

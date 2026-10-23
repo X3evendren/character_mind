@@ -1,5 +1,5 @@
 /** Config Loader — Parse config/*.md into typed TS objects. */
-import { readFileSync, existsSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync } from "fs";
 import { resolve, join } from "path";
 
 export interface AssistantConfig {
@@ -62,55 +62,3 @@ export function loadToolDefinitions(configDir: string): ToolDefinition[] {
   }
 }
 
-export interface MemoryConfig {
-  workingMemorySize: number;
-  shortTermMemorySize: number;
-  longTermMemorySize: number;
-  coreGraphMaxNodes: number;
-  coreGraphMaxEdges: number;
-  shortTermHalfLifeDays: number;
-  longTermHalfLifeDays: number;
-  graphEdgeHalfLifeDays: number;
-  trustDecayRate: number;
-  daydreamIntervalTicks: number;
-  quickSleepIntervalTicks: number;
-  defaultRetrievalCount: number;
-  semanticWeight: number;
-  timeDecayWeight: number;
-  significanceWeight: number;
-}
-
-export function loadMemoryConfig(configDir: string): MemoryConfig {
-  const fp = resolve(configDir, "memory.md");
-  const defaults: MemoryConfig = {
-    workingMemorySize: 50, shortTermMemorySize: 200, longTermMemorySize: 500,
-    coreGraphMaxNodes: 500, coreGraphMaxEdges: 2000,
-    shortTermHalfLifeDays: 7, longTermHalfLifeDays: 30, graphEdgeHalfLifeDays: 30,
-    trustDecayRate: 0.95, daydreamIntervalTicks: 10, quickSleepIntervalTicks: 50,
-    defaultRetrievalCount: 5, semanticWeight: 0.3, timeDecayWeight: 0.3, significanceWeight: 0.4,
-  };
-  try {
-    const text = readFileSync(fp, "utf-8");
-    const extract = (key: string): number | undefined => {
-      const m = text.match(new RegExp(`${key}[：:]\\s*(\\d+\\.?\\d*)`));
-      return m ? parseFloat(m[1]) : undefined;
-    };
-    const v = extract("working_memory_size"); if (v !== undefined) defaults.workingMemorySize = v;
-    const s = extract("short_term_memory_size"); if (s !== undefined) defaults.shortTermMemorySize = s;
-    const l = extract("long_term_memory_size"); if (l !== undefined) defaults.longTermMemorySize = l;
-    const c = extract("core_graph_max_nodes"); if (c !== undefined) defaults.coreGraphMaxNodes = c;
-    const ce = extract("core_graph_max_edges"); if (ce !== undefined) defaults.coreGraphMaxEdges = ce;
-    const d = extract("daydream_interval_ticks"); if (d !== undefined) defaults.daydreamIntervalTicks = d;
-    const q = extract("quick_sleep_interval_ticks"); if (q !== undefined) defaults.quickSleepIntervalTicks = q;
-    const sw = extract("semantic_weight"); if (sw !== undefined) defaults.semanticWeight = sw;
-    const tw = extract("time_decay_weight"); if (tw !== undefined) defaults.timeDecayWeight = tw;
-    const iw = extract("significance_weight"); if (iw !== undefined) defaults.significanceWeight = iw;
-  } catch { /* use defaults */ }
-  return defaults;
-}
-
-export function ensureSkillsDir(baseDir: string): string {
-  const d = resolve(baseDir, "skills");
-  if (!existsSync(d)) mkdirSync(d, { recursive: true });
-  return d;
-}

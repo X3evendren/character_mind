@@ -4,7 +4,7 @@ import { useThemeStore } from "../../ui/stores/theme-store";
 export const themeCommand: LocalCommand = {
   type: "local",
   name: "theme",
-  description: "Switch or configure the terminal theme",
+  description: "查看、切换或保存终端主题",
   aliases: ["th"],
   call(args: string, _ctx: CommandContext): string {
     const trimmed = args.trim();

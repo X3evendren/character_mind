@@ -2,10 +2,10 @@
  * Command types — Discriminated union 
  * Supports PromptCommand (expands to prompt text) and LocalCommand (executes immediately).
  */
-import type { CharacterAgent } from "../agent/agent";
+import type { AgentPort } from "../ui/agent-port";
 
 export interface CommandContext {
-  agent: CharacterAgent;
+  agent: AgentPort;
   args: string;           // Text after command name
   raw: string;            // Full user input including /
 }

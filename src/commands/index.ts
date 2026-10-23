@@ -1,18 +1,19 @@
 /**
  * Command system — register builtins + export public API.
  */
-import { registerCommand } from "./registry";
+import { registerCommand, findCommand } from "./registry";
 import { router } from "./router";
 import { helpCommand } from "./builtin/help";
 import { quitCommand } from "./builtin/quit";
 import { statsCommand } from "./builtin/stats";
 import { modelCommand } from "./builtin/model";
-import { dreamCommand } from "./builtin/dream";
+import { compressCommand, expandCommand } from "./builtin/memory";
 import { thinkCommand } from "./builtin/think";
 import { themeCommand } from "./builtin/theme";
 import { debugCommand } from "./builtin/debug";
 
 export function registerBuiltinCommands(): void {
+  if (findCommand('help')) return;
   // Priority commands (execute outside turn lock)
   router.setPriority("quit");
   router.setPriority("exit");
@@ -23,7 +24,8 @@ export function registerBuiltinCommands(): void {
   registerCommand(helpCommand);
   registerCommand(statsCommand);
   registerCommand(modelCommand);
-  registerCommand(dreamCommand);
+  registerCommand(compressCommand);
+  registerCommand(expandCommand);
   registerCommand(thinkCommand);
   registerCommand(themeCommand);
   registerCommand(debugCommand);

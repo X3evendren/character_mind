@@ -1,7 +1,7 @@
 /**
  * Integration tests for MCP, Channels, Plugin, and Cron modules.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ── MCP ──
 import { mcpToolToDef, loadMcpTools, unloadMcpTools } from "./mcp/tool-loader";
@@ -20,7 +20,6 @@ import type { Plugin, PluginMeta, PluginHealth } from "./plugin/types";
 // ── Cron ──
 import { CronService } from "./cron/service";
 import { CronJobStore } from "./cron/store";
-import { registerCognitiveTriggers, DEFAULT_COGNITIVE_SCHEDULE } from "./cron/cognitive-trigger";
 import type { CronSchedule, CronJob } from "./cron/types";
 import { nextJobId } from "./cron/types";
 
@@ -392,6 +391,8 @@ describe("CronService", () => {
 
   it("fires callbacks when job executes", async () => {
     const svc = new CronService("/tmp/cron-test-svc");
+    vi.useFakeTimers();
+    try {
     let fired = false;
 
     const job = svc.addJob({
@@ -404,15 +405,17 @@ describe("CronService", () => {
     svc.on(job.id, async (_j) => { fired = true; });
     svc.start();
 
-    // Wait for the at-timer to fire
-    await new Promise(r => setTimeout(r, 200));
+    await vi.advanceTimersByTimeAsync(200);
     expect(fired).toBe(true);
-
-    await svc.stop();
+    } finally {
+      try { await svc.stop(); } finally { vi.useRealTimers(); }
+    }
   });
 
   it("global callback fires for all jobs", async () => {
     const svc = new CronService("/tmp/cron-test-svc");
+    vi.useFakeTimers();
+    try {
     let globalFired = 0;
 
     svc.addJob({
@@ -431,10 +434,11 @@ describe("CronService", () => {
     svc.onAll(async () => { globalFired++; });
     svc.start();
 
-    await new Promise(r => setTimeout(r, 200));
+    await vi.advanceTimersByTimeAsync(200);
     expect(globalFired).toBe(2);
-
-    await svc.stop();
+    } finally {
+      try { await svc.stop(); } finally { vi.useRealTimers(); }
+    }
   });
 
   it("computeNextRun handles 'at' schedule", () => {
@@ -494,50 +498,3 @@ describe("CronService", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// Cron — Cognitive Triggers
-// ═══════════════════════════════════════════════════════════════
-
-describe("CognitiveTriggers", () => {
-  it("registers all 6 default cognitive jobs", () => {
-    const svc = new CronService("/tmp/cron-cognitive-test");
-    let count = 0;
-    registerCognitiveTriggers(svc, async () => { count++; });
-    const jobs = svc.list();
-    expect(jobs.length).toBe(6);
-    const names = jobs.map(j => j.name);
-    expect(names).toContain("cognitive:drive_check");
-    expect(names).toContain("cognitive:deep_reflection");
-    expect(names).toContain("cognitive:boredom_check");
-    expect(names).toContain("cognitive:horizon_review");
-    expect(names).toContain("cognitive:memory_consolidation");
-    expect(names).toContain("cognitive:mood_update");
-  });
-
-  it("all cognitive jobs have cognitive_event payload", () => {
-    const svc = new CronService("/tmp/cron-cognitive-payload");
-    registerCognitiveTriggers(svc, async () => {});
-    for (const job of svc.list()) {
-      expect(job.payload.kind).toBe("cognitive_event");
-      expect(job.payload.cognitiveEvent).toBeDefined();
-      expect(job.payload.message).toBeUndefined();
-    }
-  });
-
-  it("drive_check runs every 30 min by default", () => {
-    const svc = new CronService("/tmp/cron-cognitive-drive");
-    registerCognitiveTriggers(svc, async () => {});
-    const job = svc.list().find(j => j.name === "cognitive:drive_check")!;
-    expect(job.schedule.everyMs).toBe(1_800_000);
-  });
-
-  it("supports custom intervals", () => {
-    const svc = new CronService("/tmp/cron-cognitive-custom");
-    registerCognitiveTriggers(svc, async () => {}, {
-      driveCheckMs: 60_000,  // 1 min instead of 30
-      boredomCheckMs: 10_000, // 10s instead of 5 min
-    });
-    const driveJob = svc.list().find(j => j.name === "cognitive:drive_check")!;
-    expect(driveJob.schedule.everyMs).toBe(60_000);
-  });
-});

@@ -12,26 +12,11 @@ export interface ThemeColors {
 }
 
 export interface ThemeLayout {
-  leftPanelWidth: number;
   showDashboard: boolean;
-  dashboardDefaultTab: number;
-}
-
-export interface ThemeTypography {
-  roleNameBold: boolean;
-  timestampFormat: string;
-}
-
-export interface ThemeAnimation {
-  streaming: boolean;
-  progressBars: boolean;
-  sparkline: boolean;
 }
 
 export interface ThemeConfig {
   name: string;
   colors: ThemeColors;
   layout: ThemeLayout;
-  typography: ThemeTypography;
-  animation: ThemeAnimation;
 }

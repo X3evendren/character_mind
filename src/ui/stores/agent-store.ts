@@ -19,7 +19,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
   agent: null,
   snapshot: null,
   setAgent: (agent) => {
-    set({ agent });
+    set({ agent, ...(agent ? {} : { snapshot: null }) });
     if (agent) get().startPolling(agent);
     else get().stopPolling();
   },

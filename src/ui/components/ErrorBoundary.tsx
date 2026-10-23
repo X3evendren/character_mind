@@ -7,12 +7,10 @@ import { Text, Box } from "ink";
 export class ErrorBoundary extends Component<{ children: React.ReactNode; area?: string }> {
   state = { hasError: false, error: null as Error | null };
   private _area = "";
-  private _kids: React.ReactNode = null;
 
   constructor(props: { children: React.ReactNode; area?: string }) {
     super(props);
     this._area = props.area ?? "";
-    this._kids = props.children;
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -36,6 +34,6 @@ export class ErrorBoundary extends Component<{ children: React.ReactNode; area?:
         React.createElement(Text, { dimColor: true }, "  重启或刷新终端恢复"),
       );
     }
-    return this._kids;
+    return this.props.children;
   }
 }

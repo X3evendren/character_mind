@@ -14,9 +14,7 @@ export const DEFAULT_THEME: ThemeConfig = {
     warning: "#e6c229",       // 金 — 警告/⚠/加载动画
     error: "#c14646",        // 砖红 — 错误/✗
   },
-  layout: { leftPanelWidth: 42, showDashboard: true, dashboardDefaultTab: 0 },
-  typography: { roleNameBold: true, timestampFormat: "HH:mm" },
-  animation: { streaming: true, progressBars: true, sparkline: true },
+  layout: { showDashboard: true },
 };
 
 export const DARK_THEME: ThemeConfig = {
